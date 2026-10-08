@@ -32,6 +32,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# Google service account keys
+*service-account*.json
+credentials*.json
 
 # vercel
 .vercel
