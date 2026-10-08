@@ -9,11 +9,13 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 type Insert<Row, Required extends keyof Row> = Pick<Row, Required> & Partial<Omit<Row, Required>>;
 
 export type EventStatus = "NOT_STARTED" | "LIVE" | "PAUSED" | "CLOSED";
-export type AssignmentStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "REPLACED";
 export type EvaluationStatus = "IN_PROGRESS" | "COMPLETED";
-export type SyncEntityType = "STUDENT" | "EVALUATOR" | "ASSIGNMENT" | "EVALUATION" | "RESULTS";
+export type ClaimStatus = "AVAILABLE" | "MINE_IN_PROGRESS" | "MINE_COMPLETED" | "TAKEN";
+export type InputStyle = "STARS" | "SLIDER" | "NUMBER";
+export type SyncEntityType = "STUDENT" | "EVALUATOR" | "EVALUATION" | "RESULTS" | "RESPONSE_ROW";
 export type SyncStatus = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED" | "SUPERSEDED";
 export type AppRole = "ADMIN" | "EVALUATOR";
+export type MatchedBy = "REGISTER_NUMBER" | "EMAIL" | "CREATED";
 
 export type ProfileRow = {
   id: string;
@@ -22,24 +24,25 @@ export type ProfileRow = {
   email: string | null;
   created_at: string;
   updated_at: string;
-}
+};
 
 export type AppSettingsRow = {
   id: boolean;
   event_status: EventStatus;
-  max_per_evaluator: number;
-  evaluators_per_student: number;
+  max_evaluations_per_evaluator: number;
   allow_resubmission: boolean;
   tie_breakers: string[];
   form_field_mapping: Json;
+  sheet_writeback: Json;
   updated_at: string;
   updated_by: string | null;
-}
+};
 
 export type StudentRow = {
   id: string;
   register_number: string;
   name: string;
+  gender: string | null;
   department: string | null;
   year: number | null;
   section: string | null;
@@ -51,21 +54,21 @@ export type StudentRow = {
   tie_break_priority: number | null;
   created_at: string;
   updated_at: string;
-}
+};
 
 export type IdeaRow = {
   id: string;
   student_id: string;
-  title: string | null;
-  problem_statement: string | null;
-  idea_description: string | null;
-  team_details: string | null;
+  abstract: string | null;
   ppt_url: string | null;
   other_details: Json;
   submission_status: "SUBMITTED" | "INCOMPLETE";
+  submitted_at: string | null;
+  response_row: number | null;
+  matched_by: MatchedBy;
   created_at: string;
   updated_at: string;
-}
+};
 
 export type EvaluatorRow = {
   id: string;
@@ -75,53 +78,50 @@ export type EvaluatorRow = {
   employee_id: string | null;
   department: string | null;
   status: "ACTIVE" | "DISABLED";
-  max_assignments: number;
+  max_evaluations: number;
   created_at: string;
   updated_at: string;
-}
+};
 
-export type AllocationBatchRow = {
+export type CriterionRow = {
   id: string;
-  created_by: string | null;
-  allocation_type: "INITIAL" | "INCREMENTAL" | "FULL_REALLOCATION";
-  student_count: number;
-  evaluator_count: number;
-  assignment_count: number;
-  replaced_count: number;
-  max_per_evaluator: number;
-  evaluators_per_student: number;
-  seed: string | null;
-  status: "DRAFT" | "CONFIRMED" | "REPLACED" | "CANCELLED";
+  name: string;
+  description: string | null;
+  max_marks: number;
+  input_style: InputStyle;
+  sort_order: number;
+  is_active: boolean;
+  sheet_column: string | null;
   created_at: string;
-  replaced_at: string | null;
-}
-
-export type AssignmentRow = {
-  id: string;
-  student_id: string;
-  evaluator_id: string;
-  allocation_batch_id: string | null;
-  status: AssignmentStatus;
-  assigned_at: string;
-  completed_at: string | null;
-  replaced_at: string | null;
   updated_at: string;
-}
+};
+
+export type DomainRow = {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
 export type EvaluationRow = {
   id: string;
-  assignment_id: string;
   student_id: string;
   evaluator_id: string;
-  score: number | null;
   remarks: string | null;
   status: EvaluationStatus;
   version: number;
+  total_score: number | null;
+  max_total: number | null;
   started_at: string;
   submitted_at: string | null;
   created_at: string;
   updated_at: string;
-}
+};
+
+export type EvaluationScoreRow = { evaluation_id: string; criterion_id: string; score: number };
+export type EvaluationDomainRow = { evaluation_id: string; domain_id: string };
 
 export type AuditLogRow = {
   id: number;
@@ -131,7 +131,7 @@ export type AuditLogRow = {
   entity_id: string | null;
   metadata: Json;
   created_at: string;
-}
+};
 
 export type SyncJobRow = {
   id: string;
@@ -146,13 +146,9 @@ export type SyncJobRow = {
   locked_at: string | null;
   created_at: string;
   processed_at: string | null;
-}
+};
 
-export type SyncLockRow = {
-  name: string;
-  holder: string | null;
-  lease_until: string;
-}
+export type SyncLockRow = { name: string; holder: string | null; lease_until: string };
 
 export type FormSyncRunRow = {
   id: string;
@@ -166,25 +162,22 @@ export type FormSyncRunRow = {
   errors: Json;
   triggered_by: string | null;
   created_at: string;
-}
+};
 
-export type MyAssignmentRow = {
-  assignment_id: string;
-  assignment_status: AssignmentStatus;
-  assigned_at: string;
-  completed_at: string | null;
+export type MyEvaluationRow = {
+  evaluation_id: string;
+  status: EvaluationStatus;
+  total_score: number | null;
+  max_total: number | null;
+  started_at: string;
+  submitted_at: string | null;
+  updated_at: string;
   student_id: string;
   register_number: string;
   student_name: string;
   department: string | null;
   section: string | null;
-  year: number | null;
-  has_idea: boolean;
-  has_ppt: boolean;
-  score: number | null;
-  evaluation_status: EvaluationStatus | null;
-  evaluation_updated_at: string | null;
-}
+};
 
 export type EvaluatorProgressRow = {
   evaluator_id: string;
@@ -193,13 +186,55 @@ export type EvaluatorProgressRow = {
   employee_id: string | null;
   department: string | null;
   status: "ACTIVE" | "DISABLED";
-  max_assignments: number;
-  assigned_count: number;
+  max_evaluations: number;
+  evaluation_cap: number;
+  claimed_count: number;
   completed_count: number;
   in_progress_count: number;
-  pending_count: number;
-  average_score: number | null;
-}
+  average_percentage: number | null;
+};
+
+export type StudentOverviewRow = {
+  id: string;
+  register_number: string;
+  name: string;
+  gender: string | null;
+  department: string | null;
+  section: string | null;
+  email: string | null;
+  status: StudentRow["status"];
+  source: StudentRow["source"];
+  created_at: string;
+  updated_at: string;
+  submission_status: "SUBMITTED" | "INCOMPLETE" | "MISSING";
+  ppt_url: string | null;
+  matched_by: MatchedBy | null;
+  evaluation_status: EvaluationStatus | "NOT_EVALUATED";
+  evaluation_id: string | null;
+  total_score: number | null;
+  max_total: number | null;
+  evaluator_name: string | null;
+};
+
+export type EvaluationOverviewRow = {
+  evaluation_id: string;
+  status: EvaluationStatus;
+  total_score: number | null;
+  max_total: number | null;
+  remarks: string | null;
+  started_at: string;
+  submitted_at: string | null;
+  updated_at: string;
+  student_id: string;
+  register_number: string;
+  student_name: string;
+  department: string | null;
+  evaluator_id: string;
+  evaluator_name: string;
+  scores: Record<string, number>;
+  domain_ids: string[];
+  domains: string | null;
+};
 
 export type StudentResultRow = {
   student_id: string;
@@ -209,72 +244,78 @@ export type StudentResultRow = {
   section: string | null;
   status: StudentRow["status"];
   tie_break_priority: number | null;
-  assigned_count: number;
-  evaluation_count: number;
-  average_score: number | null;
-  min_score: number | null;
-  max_score: number | null;
-  scores: number[] | null;
-}
+  evaluation_id: string;
+  total_score: number;
+  max_total: number;
+  scores: Record<string, number>;
+  domains: string | null;
+  evaluator_name: string;
+  submitted_at: string;
+};
 
-export type StudentOverviewRow = {
-  id: string;
+export type SearchResultRow = {
+  student_id: string;
   register_number: string;
   name: string;
   department: string | null;
-  year: number | null;
   section: string | null;
-  status: StudentRow["status"];
-  source: StudentRow["source"];
-  created_at: string;
-  updated_at: string;
+  email: string | null;
   submission_status: "SUBMITTED" | "INCOMPLETE" | "MISSING";
-  ppt_url: string | null;
-  assigned_count: number;
-  completed_count: number;
-  average_score: number | null;
-  evaluator_names: string | null;
-  evaluation_state: "UNASSIGNED" | "PENDING" | "COMPLETED";
-}
+  claim_status: ClaimStatus;
+};
 
-export type EvaluationOverviewRow = {
-  assignment_id: string;
-  assignment_status: AssignmentStatus;
-  assigned_at: string;
-  allocation_batch_id: string | null;
-  student_id: string;
-  register_number: string;
-  student_name: string;
-  department: string | null;
-  evaluator_id: string;
-  evaluator_name: string;
-  evaluation_id: string | null;
-  score: number | null;
-  remarks: string | null;
-  evaluation_status: EvaluationStatus | null;
-  submitted_at: string | null;
-  evaluation_updated_at: string | null;
-}
+export type StudentForEvaluation = {
+  student: {
+    id: string;
+    register_number: string;
+    name: string;
+    department: string | null;
+    section: string | null;
+    year: number | null;
+    email: string | null;
+  };
+  idea: {
+    abstract: string | null;
+    ppt_url: string | null;
+    other_details: Json;
+    submission_status: "SUBMITTED" | "INCOMPLETE";
+    submitted_at: string | null;
+  } | null;
+  claim_status: ClaimStatus;
+  evaluation: {
+    id: string;
+    status: EvaluationStatus;
+    remarks: string | null;
+    version: number;
+    updated_at: string;
+    submitted_at: string | null;
+    total_score: number | null;
+    max_total: number | null;
+    scores: Record<string, number>;
+    domain_ids: string[];
+  } | null;
+};
 
 export type DashboardStats = {
   total_students: number;
   ideas_submitted: number;
   ideas_incomplete: number;
+  unmatched_submissions: number;
   total_evaluators: number;
-  assigned_students: number;
-  total_assignments: number;
+  evaluation_capacity: number;
   completed_evaluations: number;
   in_progress_evaluations: number;
-  pending_evaluations: number;
-  average_score: number | null;
-  score_distribution: Record<string, number>;
-  department_progress: { department: string; assigned: number; completed: number }[];
+  not_evaluated: number;
+  average_percentage: number | null;
+  percentage_distribution: Record<string, number>;
+  domain_counts: { domain: string; count: number }[];
+  department_progress: { department: string; students: number; completed: number }[];
   event_status: EventStatus;
   sync_pending: number;
   sync_failed: number;
   last_sync_at: string | null;
   last_form_sync_at: string | null;
-}
+};
 
 type Table<Row, Required extends keyof Row> = {
   Row: Row;
@@ -293,48 +334,42 @@ export type Database = {
       students: Table<StudentRow, "register_number" | "name">;
       ideas: Table<IdeaRow, "student_id">;
       evaluators: Table<EvaluatorRow, "name" | "email">;
-      allocation_batches: Table<
-        AllocationBatchRow,
-        "allocation_type" | "student_count" | "evaluator_count" | "assignment_count" | "max_per_evaluator" | "evaluators_per_student"
-      >;
-      evaluation_assignments: Table<AssignmentRow, "student_id" | "evaluator_id">;
-      evaluations: Table<EvaluationRow, "assignment_id" | "student_id" | "evaluator_id">;
+      evaluation_criteria: Table<CriterionRow, "name" | "max_marks">;
+      domains: Table<DomainRow, "name">;
+      evaluations: Table<EvaluationRow, "student_id" | "evaluator_id">;
+      evaluation_scores: Table<EvaluationScoreRow, "evaluation_id" | "criterion_id" | "score">;
+      evaluation_domains: Table<EvaluationDomainRow, "evaluation_id" | "domain_id">;
       audit_logs: Table<AuditLogRow, "action">;
       sheet_sync_queue: Table<SyncJobRow, "entity_type" | "entity_id">;
       sync_locks: Table<SyncLockRow, "name">;
       form_sync_runs: Table<FormSyncRunRow, "source" | "status">;
     };
     Views: {
-      my_assignments: View<MyAssignmentRow>;
+      my_evaluations: View<MyEvaluationRow>;
       evaluator_progress: View<EvaluatorProgressRow>;
-      student_results: View<StudentResultRow>;
       student_overview: View<StudentOverviewRow>;
       evaluation_overview: View<EvaluationOverviewRow>;
+      student_results: View<StudentResultRow>;
     };
     Functions: {
       app_role: { Args: Record<string, never>; Returns: string | null };
       is_admin: { Args: Record<string, never>; Returns: boolean };
       current_evaluator_id: { Args: Record<string, never>; Returns: string | null };
+      search_students: { Args: { p_query: string; p_limit?: number }; Returns: SearchResultRow[] };
+      get_student_for_evaluation: { Args: { p_student_id: string }; Returns: Json };
       save_evaluation_draft: {
-        Args: { p_assignment_id: string; p_score: number | null; p_remarks: string | null };
+        Args: { p_student_id: string; p_scores: Json; p_remarks: string | null; p_domain_ids: string[] };
         Returns: Json;
       };
       submit_evaluation: {
-        Args: { p_assignment_id: string; p_score: number; p_remarks: string | null };
+        Args: { p_student_id: string; p_scores: Json; p_remarks: string | null; p_domain_ids: string[] };
         Returns: Json;
       };
+      release_my_evaluation: { Args: { p_student_id: string }; Returns: undefined };
       admin_reopen_evaluation: { Args: { p_evaluation_id: string; p_reason: string }; Returns: undefined };
+      admin_release_evaluation: { Args: { p_evaluation_id: string; p_reason: string }; Returns: undefined };
       set_event_status: { Args: { p_status: string }; Returns: undefined };
-      confirm_allocation: {
-        Args: {
-          p_allocation_type: string;
-          p_seed: string;
-          p_max_per_evaluator: number;
-          p_evaluators_per_student: number;
-          p_assignments: Json;
-        };
-        Returns: Json;
-      };
+      import_students: { Args: { p_rows: Json; p_actor?: string | null }; Returns: Json };
       upsert_form_submissions: { Args: { p_rows: Json; p_source: string; p_actor?: string | null }; Returns: Json };
       write_audit: {
         Args: {

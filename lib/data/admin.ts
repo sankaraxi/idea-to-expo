@@ -23,26 +23,50 @@ function unwrap<T>(result: { data: T; error: { message: string } | null; count?:
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const db = await adminDb();
-  const { data } = unwrap(await db.rpc("dashboard_stats"));
-  return data as unknown as DashboardStats;
+  return unwrap(await db.rpc("dashboard_stats")).data as unknown as DashboardStats;
 }
 
 export async function getEvaluatorProgress() {
   const db = await adminDb();
-  return unwrap(await db.from("evaluator_progress").select("*").order("name")).data ?? [];
+  return unwrap(await db.from("evaluator_progress").select("*").order("name")).data;
 }
 
 export async function getDepartments(): Promise<string[]> {
   const db = await adminDb();
   const { data } = unwrap(await db.from("students").select("department").not("department", "is", null).limit(5000));
-  return [...new Set((data ?? []).map((d) => d.department as string))].sort();
+  return [...new Set(data.map((d) => d.department as string))].sort();
+}
+
+export async function getCriteria() {
+  const db = await adminDb();
+  return unwrap(await db.from("evaluation_criteria").select("*").order("sort_order").order("name")).data;
+}
+
+export async function getDomains() {
+  const db = await adminDb();
+  return unwrap(await db.from("domains").select("*").order("sort_order").order("name")).data;
+}
+
+/** Usage counts so the UI can explain why a criterion/domain cannot be deleted. */
+export async function getCriteriaUsage() {
+  const db = await adminDb();
+  const [scores, domains] = await Promise.all([
+    db.from("evaluation_scores").select("criterion_id").limit(100000),
+    db.from("evaluation_domains").select("domain_id").limit(100000),
+  ]);
+  const count = (ids: string[]) => ids.reduce<Record<string, number>>((m, id) => ((m[id] = (m[id] ?? 0) + 1), m), {});
+  return {
+    criteria: count((scores.data ?? []).map((r) => r.criterion_id)),
+    domains: count((domains.data ?? []).map((r) => r.domain_id)),
+  };
 }
 
 export interface StudentFilters {
   q: string;
   department: string;
-  evaluation: "" | "UNASSIGNED" | "PENDING" | "COMPLETED";
+  evaluation: "" | "NOT_EVALUATED" | "IN_PROGRESS" | "COMPLETED";
   submission: "" | "SUBMITTED" | "INCOMPLETE" | "MISSING";
+  matched: "" | "CREATED" | "EMAIL";
   status: string;
   page: number;
 }
@@ -51,52 +75,36 @@ export async function listStudents(f: StudentFilters, pageSize = 50) {
   const db = await adminDb();
   let query = db.from("student_overview").select("*", { count: "exact" });
   const q = searchTerm(f.q);
-  if (q) query = query.or(`register_number.ilike.%${q}%,name.ilike.%${q}%`);
+  if (q) query = query.or(`register_number.ilike.%${q}%,name.ilike.%${q}%,email.ilike.%${q}%`);
   if (f.department) query = query.eq("department", f.department);
   if (f.submission) query = query.eq("submission_status", f.submission);
+  if (f.evaluation) query = query.eq("evaluation_status", f.evaluation);
+  if (f.matched) query = query.eq("matched_by", f.matched);
   if (f.status) query = query.eq("status", f.status as "ACTIVE");
-  if (f.evaluation) query = query.eq("evaluation_state", f.evaluation);
   const from = (f.page - 1) * pageSize;
   const result = unwrap(await query.order("register_number").range(from, from + pageSize - 1));
-  return { rows: result.data ?? [], total: result.count };
+  return { rows: result.data, total: result.count };
 }
 
 export async function getStudentDetail(id: string) {
   const db = await adminDb();
-  const [student, idea, assignments] = await Promise.all([
+  const [student, idea, evaluation, criteria] = await Promise.all([
     db.from("students").select("*").eq("id", id).maybeSingle(),
     db.from("ideas").select("*").eq("student_id", id).maybeSingle(),
-    db
-      .from("evaluation_assignments")
-      .select("id, evaluator_id, status, assigned_at, completed_at, allocation_batch_id")
-      .eq("student_id", id)
-      .order("assigned_at"),
+    db.from("evaluation_overview").select("*").eq("student_id", id).maybeSingle(),
+    db.from("evaluation_criteria").select("*").order("sort_order").order("name"),
   ]);
   if (student.error) throw new Error(student.error.message);
   if (!student.data) return null;
-  const evaluatorIds = [...new Set((assignments.data ?? []).map((a) => a.evaluator_id))];
-  const [evaluators, evaluations] = await Promise.all([
-    evaluatorIds.length ? db.from("evaluators").select("id, name, email").in("id", evaluatorIds) : { data: [] },
-    db.from("evaluations").select("*").eq("student_id", id),
-  ]);
-  return {
-    student: student.data,
-    idea: idea.data,
-    assignments: (assignments.data ?? []).map((a) => ({
-      ...a,
-      evaluator: (evaluators.data ?? []).find((e) => e.id === a.evaluator_id) ?? null,
-      evaluation: (evaluations.data ?? []).find((e) => e.assignment_id === a.id) ?? null,
-    })),
-  };
+  return { student: student.data, idea: idea.data, evaluation: evaluation.data, criteria: criteria.data ?? [] };
 }
 
 export interface EvaluationFilters {
   evaluator: string;
   department: string;
+  domain: string;
   q: string;
-  status: "" | "PENDING" | "IN_PROGRESS" | "COMPLETED";
-  minScore: number | null;
-  maxScore: number | null;
+  status: "" | "IN_PROGRESS" | "COMPLETED";
   page: number;
 }
 
@@ -105,48 +113,29 @@ export async function listEvaluations(f: EvaluationFilters, pageSize = 50) {
   let query = db.from("evaluation_overview").select("*", { count: "exact" });
   if (f.evaluator) query = query.eq("evaluator_id", f.evaluator);
   if (f.department) query = query.eq("department", f.department);
+  if (f.domain) query = query.contains("domain_ids", [f.domain]);
   const q = searchTerm(f.q);
   if (q) query = query.or(`register_number.ilike.%${q}%,student_name.ilike.%${q}%`);
-  if (f.status) query = query.eq("assignment_status", f.status);
-  if (f.minScore !== null) query = query.gte("score", f.minScore);
-  if (f.maxScore !== null) query = query.lte("score", f.maxScore);
-  const from = (f.page - 1) * pageSize;
+  if (f.status) query = query.eq("status", f.status);
   const result = unwrap(
-    await query.order("evaluation_updated_at", { ascending: false, nullsFirst: false }).order("register_number").range(from, from + pageSize - 1),
+    await query.order("updated_at", { ascending: false }).range((f.page - 1) * pageSize, f.page * pageSize - 1),
   );
-  return { rows: result.data ?? [], total: result.count };
+  return { rows: result.data, total: result.count };
 }
 
 export async function getEvaluatorOptions() {
   const db = await adminDb();
-  return unwrap(await db.from("evaluators").select("id, name, status").order("name")).data ?? [];
+  return unwrap(await db.from("evaluators").select("id, name, status").order("name")).data;
 }
 
 export async function getResults() {
   const db = await adminDb();
-  const [ranked, settings] = await Promise.all([
+  const [ranked, settings, criteria] = await Promise.all([
     loadRankedResults(db),
-    db.from("app_settings").select("tie_breakers, evaluators_per_student").single(),
+    db.from("app_settings").select("tie_breakers").single(),
+    db.from("evaluation_criteria").select("id, name, max_marks, is_active, sort_order").order("sort_order").order("name"),
   ]);
-  return { ranked, settings: unwrap(settings).data };
-}
-
-export async function getAllocationOverview() {
-  const db = await adminDb();
-  const [settings, students, evaluators, live, batches] = await Promise.all([
-    db.from("app_settings").select("max_per_evaluator, evaluators_per_student, event_status").single(),
-    db.from("students").select("id", { count: "exact", head: true }).eq("status", "ACTIVE"),
-    db.from("evaluators").select("max_assignments").eq("status", "ACTIVE"),
-    db.from("evaluation_assignments").select("id", { count: "exact", head: true }).neq("status", "REPLACED"),
-    db.from("allocation_batches").select("*").order("created_at", { ascending: false }).limit(20),
-  ]);
-  return {
-    settings: unwrap(settings).data,
-    activeStudents: students.count ?? 0,
-    evaluatorCaps: (evaluators.data ?? []).map((e) => e.max_assignments),
-    liveAssignments: live.count ?? 0,
-    batches: unwrap(batches).data ?? [],
-  };
+  return { ranked, tieBreakers: unwrap(settings).data.tie_breakers, criteria: criteria.data ?? [] };
 }
 
 export async function getSyncOverview() {
@@ -180,11 +169,11 @@ export async function listAuditLogs(f: { action: string; page: number }, pageSiz
   if (f.action) query = query.eq("action", f.action);
   const from = (f.page - 1) * pageSize;
   const result = unwrap(await query.order("created_at", { ascending: false }).range(from, from + pageSize - 1));
-  const userIds = [...new Set((result.data ?? []).map((r) => r.user_id).filter((v): v is string => !!v))];
+  const userIds = [...new Set(result.data.map((r) => r.user_id).filter((v): v is string => !!v))];
   const profiles = userIds.length
-    ? (await db.from("profiles").select("id, full_name, email, role").in("id", userIds)).data ?? []
+    ? ((await db.from("profiles").select("id, full_name, email, role").in("id", userIds)).data ?? [])
     : [];
-  return { rows: result.data ?? [], total: result.count, profiles };
+  return { rows: result.data, total: result.count, profiles };
 }
 
 export async function getFullSettings() {

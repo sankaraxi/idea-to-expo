@@ -1,49 +1,73 @@
 /**
- * Local draft recovery. Every keystroke is mirrored to localStorage; the
- * server holds the debounced copy. On load we pick whichever is newer, so a
+ * Local draft recovery. Every change is mirrored to localStorage; the server
+ * holds the debounced copy. On load we pick whichever is newer, so a
  * refresh, crash or network drop never loses an evaluator's work.
  */
 
-export interface LocalDraft {
-  score: number | null;
+export interface DraftValues {
+  scores: Record<string, number>;
   remarks: string;
+  domainIds: string[];
+}
+
+export interface LocalDraft extends DraftValues {
   savedAt: number;
 }
 
-export interface ServerDraft {
-  score: number | null;
-  remarks: string;
+export interface ServerDraft extends DraftValues {
   status: "IN_PROGRESS" | "COMPLETED";
   updatedAt: string;
 }
 
-export const draftKey = (assignmentId: string) => `ite:draft:${assignmentId}`;
+export const draftKey = (studentId: string) => `ite:draft:v2:${studentId}`;
 
 export function parseLocalDraft(raw: string | null): LocalDraft | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Partial<LocalDraft>;
-    const score =
-      typeof value.score === "number" && Number.isInteger(value.score) && value.score >= 1 && value.score <= 10
-        ? value.score
-        : null;
     if (typeof value.savedAt !== "number" || typeof value.remarks !== "string") return null;
-    return { score, remarks: value.remarks.slice(0, 5000), savedAt: value.savedAt };
+    const scores: Record<string, number> = {};
+    if (value.scores && typeof value.scores === "object") {
+      for (const [k, v] of Object.entries(value.scores)) {
+        if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100) scores[k] = v;
+      }
+    }
+    const domainIds = Array.isArray(value.domainIds) ? value.domainIds.filter((d): d is string => typeof d === "string") : [];
+    return { scores, remarks: value.remarks.slice(0, 5000), domainIds, savedAt: value.savedAt };
   } catch {
     return null;
   }
 }
 
+export function sameDraft(a: DraftValues, b: DraftValues) {
+  const keys = new Set([...Object.keys(a.scores), ...Object.keys(b.scores)]);
+  for (const k of keys) if (a.scores[k] !== b.scores[k]) return false;
+  const da = [...a.domainIds].sort().join(",");
+  const db = [...b.domainIds].sort().join(",");
+  return a.remarks.trim() === b.remarks.trim() && da === db;
+}
+
+/** Keeps only criteria / domains that still exist (admin may have changed them). */
+export function pruneDraft(values: DraftValues, criteria: { id: string; max_marks: number }[], domainIds: string[]): DraftValues {
+  const scores: Record<string, number> = {};
+  for (const c of criteria) {
+    const v = values.scores[c.id];
+    if (v !== undefined && v <= c.max_marks) scores[c.id] = v;
+  }
+  const allowed = new Set(domainIds);
+  return { scores, remarks: values.remarks, domainIds: values.domainIds.filter((d) => allowed.has(d)) };
+}
+
 export function chooseInitialDraft(
   server: ServerDraft | null,
   local: LocalDraft | null,
-): { source: "server" | "local" | "empty"; score: number | null; remarks: string } {
-  if (server?.status === "COMPLETED") return { source: "server", score: server.score, remarks: server.remarks };
+): DraftValues & { source: "server" | "local" | "empty" } {
+  const pick = (v: DraftValues) => ({ scores: v.scores, remarks: v.remarks, domainIds: v.domainIds });
+  if (server?.status === "COMPLETED") return { source: "server", ...pick(server) };
   const serverTime = server ? Date.parse(server.updatedAt) : 0;
-  if (local && local.savedAt > serverTime) {
-    const differs = !server || local.score !== server.score || local.remarks.trim() !== server.remarks.trim();
-    if (differs) return { source: "local", score: local.score, remarks: local.remarks };
+  if (local && local.savedAt > serverTime && (!server || !sameDraft(local, server))) {
+    return { source: "local", ...pick(local) };
   }
-  if (server) return { source: "server", score: server.score, remarks: server.remarks };
-  return { source: "empty", score: null, remarks: "" };
+  if (server) return { source: "server", ...pick(server) };
+  return { source: "empty", scores: {}, remarks: "", domainIds: [] };
 }

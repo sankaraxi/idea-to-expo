@@ -6,21 +6,25 @@
 
 export const ERROR_MESSAGES = {
   NOT_AN_EVALUATOR: "Your evaluator account is not active. Please contact the event admin.",
-  EVENT_NOT_LIVE: "Evaluation is not open right now. Your work is saved — you can submit once the event is live.",
-  INVALID_SCORE: "Score must be a whole number from 1 to 10.",
+  EVENT_NOT_LIVE: "Evaluation is not open right now. Your work is saved on this device — you can submit once the event is live.",
+  INVALID_SCORE: "Scores must be whole numbers.",
+  SCORE_OUT_OF_RANGE: "A score is above that criterion's maximum.",
+  INCOMPLETE_SCORES: "Please score every criterion before submitting.",
+  UNKNOWN_CRITERION: "The evaluation criteria changed. Please reload the page.",
+  UNKNOWN_DOMAIN: "The domain list changed. Please reload the page.",
+  NO_CRITERIA: "No evaluation criteria are set up yet. Please contact the event admin.",
   REMARKS_TOO_LONG: "Remarks must be 5000 characters or fewer.",
-  ASSIGNMENT_NOT_FOUND: "This student is not assigned to you.",
+  STUDENT_NOT_FOUND: "Student not found.",
+  STUDENT_TAKEN: "This student is already being evaluated by another evaluator.",
+  EVALUATOR_LIMIT_REACHED: "You have reached your maximum number of evaluations.",
   ALREADY_SUBMITTED: "This evaluation has already been submitted and can no longer be changed.",
   FORBIDDEN: "You do not have permission to do that.",
   REASON_REQUIRED: "Please give a reason.",
   EVALUATION_NOT_FOUND: "Evaluation not found.",
   EVALUATION_NOT_COMPLETED: "Only submitted evaluations can be reopened.",
   INVALID_EVENT_STATUS: "Unknown event status.",
-  INVALID_ALLOCATION_TYPE: "Unknown allocation type.",
-  INVALID_ALLOCATION_CONFIG: "Allocation settings are out of range.",
-  EMPTY_ALLOCATION: "There is nothing to allocate.",
-  STALE_PREVIEW: "Students or evaluators changed since this preview was generated. Please regenerate the allocation.",
-  CAPACITY_EXCEEDED: "Allocation would exceed evaluator capacity. Please regenerate the allocation.",
+  CRITERION_IN_USE: "This criterion already has scores. Deactivate it instead, or keep its maximum at or above the highest score given.",
+  DOMAIN_IN_USE: "This domain is used by evaluations. Deactivate it instead.",
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
   RATE_LIMITED: "Too many attempts. Please wait a moment and try again.",
   VALIDATION: "Some fields are invalid. Please check and try again.",
@@ -80,9 +84,12 @@ export function toFailure(error: unknown, context: string) {
     console.error(`[${context}]`, error);
   }
   const detail =
-    error && typeof error === "object" && "details" in error && code === "STALE_PREVIEW"
-      ? String((error as { details: unknown }).details ?? "")
-      : "";
-  const base = ERROR_MESSAGES[code ?? "UNKNOWN"];
-  return fail(code ?? "UNKNOWN", detail ? `${base} (${detail})` : base);
+    error && typeof error === "object" && "details" in error ? String((error as { details: unknown }).details ?? "") : "";
+  if (code === "EVALUATOR_LIMIT_REACHED" && detail) {
+    return fail(code, `You have reached your maximum of ${detail} evaluations.`);
+  }
+  if (code === "SCORE_OUT_OF_RANGE" && detail) {
+    return fail(code, `The score for “${detail}” is above its maximum.`);
+  }
+  return fail(code ?? "UNKNOWN");
 }

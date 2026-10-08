@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { verifySignedRequest } from "@/lib/auth/signature";
 import { secret } from "@/lib/env";
-import { ingestRows } from "@/lib/forms/service";
+import { ingestFormRows } from "@/lib/forms/service";
 import { scheduleSheetSync } from "@/lib/sheets/trigger";
 
 export const maxDuration = 60;
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
 
   try {
-    const result = await ingestRows(parsed.data.headers, parsed.data.rows, "APPS_SCRIPT", null, parsed.data.firstRow);
+    const result = await ingestFormRows(parsed.data.headers, parsed.data.rows, "APPS_SCRIPT", null, parsed.data.firstRow);
     scheduleSheetSync();
     return NextResponse.json(result, { status: result.status === "FAILED" ? 422 : 200 });
   } catch (error) {

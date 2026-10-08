@@ -3,16 +3,23 @@ import { ProgressBar } from "@/components/shared/ui-bits";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { EvaluatorProgressRow } from "@/types/database";
 
-export function EvaluatorProgressTable({ rows, actions }: { rows: EvaluatorProgressRow[]; actions?: (row: EvaluatorProgressRow) => React.ReactNode }) {
+/** Progress = submitted evaluations against the evaluator's limit. */
+export function EvaluatorProgressTable({
+  rows,
+  actions,
+}: {
+  rows: EvaluatorProgressRow[];
+  actions?: (row: EvaluatorProgressRow) => React.ReactNode;
+}) {
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>Evaluator</TableHead>
-          <TableHead className="text-right">Assigned</TableHead>
-          <TableHead className="text-right">Completed</TableHead>
-          <TableHead className="text-right">Pending</TableHead>
-          <TableHead className="hidden text-right md:table-cell">Avg score</TableHead>
+          <TableHead className="text-right">Evaluated</TableHead>
+          <TableHead className="text-right">Drafts</TableHead>
+          <TableHead className="text-right">Limit</TableHead>
+          <TableHead className="hidden text-right md:table-cell">Avg %</TableHead>
           <TableHead className="w-40">Progress</TableHead>
           {actions && <TableHead className="text-right">Actions</TableHead>}
         </TableRow>
@@ -26,9 +33,8 @@ export function EvaluatorProgressTable({ rows, actions }: { rows: EvaluatorProgr
           </TableRow>
         )}
         {rows.map((r) => {
-          const assigned = Number(r.assigned_count);
           const completed = Number(r.completed_count);
-          const pct = assigned ? Math.round((completed / assigned) * 100) : 0;
+          const pct = r.evaluation_cap ? Math.round((completed / r.evaluation_cap) * 100) : 0;
           return (
             <TableRow key={r.evaluator_id}>
               <TableCell>
@@ -38,10 +44,10 @@ export function EvaluatorProgressTable({ rows, actions }: { rows: EvaluatorProgr
                 </div>
                 <div className="text-xs text-muted-foreground">{r.email}</div>
               </TableCell>
-              <TableCell className="text-right tabular-nums">{assigned}</TableCell>
               <TableCell className="text-right tabular-nums">{completed}</TableCell>
-              <TableCell className="text-right tabular-nums">{assigned - completed}</TableCell>
-              <TableCell className="hidden text-right tabular-nums md:table-cell">{r.average_score ?? "—"}</TableCell>
+              <TableCell className="text-right tabular-nums">{Number(r.in_progress_count)}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.evaluation_cap}</TableCell>
+              <TableCell className="hidden text-right tabular-nums md:table-cell">{r.average_percentage ?? "—"}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
                   <ProgressBar value={pct} className="h-2" />

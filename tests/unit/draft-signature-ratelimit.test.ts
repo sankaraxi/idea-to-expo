@@ -1,37 +1,46 @@
 import { describe, expect, it } from "vitest";
 import { signBody, verifySignedRequest } from "@/lib/auth/signature";
-import { chooseInitialDraft, parseLocalDraft } from "@/lib/evaluations/draft";
+import { chooseInitialDraft, parseLocalDraft, pruneDraft } from "@/lib/evaluations/draft";
 import { rateLimit } from "@/lib/rate-limit";
 
 describe("draft recovery", () => {
-  const server = { score: 6, remarks: "server", status: "IN_PROGRESS" as const, updatedAt: "2026-10-08T10:00:00Z" };
+  const server = {
+    scores: { c1: 6 },
+    remarks: "server",
+    domainIds: ["d1"],
+    status: "IN_PROGRESS" as const,
+    updatedAt: "2026-10-08T10:00:00Z",
+  };
 
   it("restores a newer local draft after refresh", () => {
-    const local = { score: 8, remarks: "typed offline", savedAt: Date.parse("2026-10-08T10:05:00Z") };
-    expect(chooseInitialDraft(server, local)).toEqual({ source: "local", score: 8, remarks: "typed offline" });
+    const local = { scores: { c1: 8, c2: 3 }, remarks: "typed offline", domainIds: [], savedAt: Date.parse("2026-10-08T10:05:00Z") };
+    expect(chooseInitialDraft(server, local)).toMatchObject({ source: "local", scores: { c1: 8, c2: 3 }, remarks: "typed offline" });
   });
 
   it("prefers the server when it is newer or identical", () => {
-    const older = { score: 2, remarks: "old", savedAt: Date.parse("2026-10-08T09:00:00Z") };
+    const older = { scores: { c1: 2 }, remarks: "old", domainIds: [], savedAt: Date.parse("2026-10-08T09:00:00Z") };
     expect(chooseInitialDraft(server, older).source).toBe("server");
-    const same = { score: 6, remarks: "server ", savedAt: Date.parse("2026-10-08T11:00:00Z") };
+    const same = { scores: { c1: 6 }, remarks: "server ", domainIds: ["d1"], savedAt: Date.parse("2026-10-08T11:00:00Z") };
     expect(chooseInitialDraft(server, same).source).toBe("server");
   });
 
   it("never overrides a submitted evaluation", () => {
-    const local = { score: 1, remarks: "x", savedAt: Date.now() };
-    expect(chooseInitialDraft({ ...server, status: "COMPLETED" }, local)).toMatchObject({ source: "server", score: 6 });
+    const local = { scores: { c1: 1 }, remarks: "x", domainIds: [], savedAt: Date.now() };
+    expect(chooseInitialDraft({ ...server, status: "COMPLETED" }, local)).toMatchObject({ source: "server", scores: { c1: 6 } });
   });
 
-  it("uses local when there is no server draft, empty otherwise", () => {
-    expect(chooseInitialDraft(null, { score: 4, remarks: "", savedAt: 1 }).source).toBe("local");
-    expect(chooseInitialDraft(null, null)).toEqual({ source: "empty", score: null, remarks: "" });
+  it("drops criteria and domains that no longer exist, and over-max scores", () => {
+    const pruned = pruneDraft({ scores: { c1: 9, gone: 3, c2: 50 }, remarks: "", domainIds: ["d1", "old"] }, [
+      { id: "c1", max_marks: 10 },
+      { id: "c2", max_marks: 20 },
+    ], ["d1"]);
+    expect(pruned).toEqual({ scores: { c1: 9 }, remarks: "", domainIds: ["d1"] });
   });
 
   it("rejects corrupt or tampered local storage", () => {
     expect(parseLocalDraft("{not json")).toBeNull();
-    expect(parseLocalDraft(JSON.stringify({ score: 99, remarks: "x", savedAt: 1 }))).toMatchObject({ score: null });
-    expect(parseLocalDraft(JSON.stringify({ score: 5 }))).toBeNull();
+    expect(parseLocalDraft(JSON.stringify({ scores: { c1: 7.5, c2: 4 }, remarks: "x", savedAt: 1 }))).toMatchObject({ scores: { c2: 4 } });
+    expect(parseLocalDraft(JSON.stringify({ scores: {} }))).toBeNull();
   });
 });
 

@@ -120,32 +120,40 @@ describe("route guards", () => {
 });
 
 describe("server action authorisation", () => {
+  const studentId = "6f1c1a4e-2b1d-4c1e-9a5e-1a2b3c4d5e6f";
+  const C1 = "11111111-1111-4111-8111-111111111111";
+
   it("rejects evaluator submissions from non-evaluators without touching the database", async () => {
     const { submitEvaluation } = await import("@/lib/actions/evaluation");
-    const res = await submitEvaluation({ assignmentId: "6f1c1a4e-2b1d-4c1e-9a5e-1a2b3c4d5e6f", score: 8, remarks: "" });
+    const res = await submitEvaluation({ studentId, scores: { [C1]: 8 }, remarks: "", domainIds: [] });
     expect(res).toMatchObject({ ok: false, code: "FORBIDDEN" });
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid scores server-side and never sends evaluator identity", async () => {
+  it("validates input server-side and never sends evaluator identity", async () => {
     fx.profile = evaluatorProfile;
     fx.evaluator = { id: "ev1", name: "Eve", status: "ACTIVE" };
     const { submitEvaluation } = await import("@/lib/actions/evaluation");
-    const id = "6f1c1a4e-2b1d-4c1e-9a5e-1a2b3c4d5e6f";
-    expect(await submitEvaluation({ assignmentId: id, score: 11, remarks: "" })).toMatchObject({ ok: false, code: "VALIDATION" });
-    expect(await submitEvaluation({ assignmentId: id, score: 7.5, remarks: "" })).toMatchObject({ ok: false });
+    expect(await submitEvaluation({ studentId, scores: { [C1]: 7.5 }, remarks: "", domainIds: [] })).toMatchObject({ ok: false, code: "VALIDATION" });
+    expect(await submitEvaluation({ studentId: "nope", scores: {}, remarks: "", domainIds: [] })).toMatchObject({ ok: false });
     expect(rpc).not.toHaveBeenCalled();
 
-    expect(await submitEvaluation({ assignmentId: id, score: 8, remarks: " ok " })).toMatchObject({ ok: true });
-    expect(rpc).toHaveBeenCalledWith("submit_evaluation", { p_assignment_id: id, p_score: 8, p_remarks: "ok" });
+    expect(await submitEvaluation({ studentId, scores: { [C1]: 8 }, remarks: " ok ", domainIds: [] })).toMatchObject({ ok: true });
+    expect(rpc).toHaveBeenCalledWith("submit_evaluation", {
+      p_student_id: studentId,
+      p_scores: { [C1]: 8 },
+      p_remarks: "ok",
+      p_domain_ids: [],
+    });
   });
 
   it("rejects admin actions from evaluators", async () => {
     fx.profile = evaluatorProfile;
     fx.evaluator = { id: "ev1", name: "Eve", status: "ACTIVE" };
-    const { setEventStatus, confirmAllocation } = await import("@/lib/actions/admin");
+    const { setEventStatus, saveCriterion, releaseEvaluation } = await import("@/lib/actions/admin");
     expect(await setEventStatus("LIVE")).toMatchObject({ ok: false, code: "FORBIDDEN" });
-    expect(await confirmAllocation({})).toMatchObject({ ok: false, code: "FORBIDDEN" });
+    expect(await saveCriterion({ name: "x", maxMarks: 5, inputStyle: "SLIDER" })).toMatchObject({ ok: false, code: "FORBIDDEN" });
+    expect(await releaseEvaluation(studentId, "because")).toMatchObject({ ok: false, code: "FORBIDDEN" });
     expect(rpc).not.toHaveBeenCalled();
   });
 });

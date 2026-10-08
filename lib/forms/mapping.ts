@@ -1,27 +1,24 @@
 import { z } from "zod";
 
 /**
- * Google Form → portal field mapping.
+ * Problem statement form → portal field mapping.
  *
  * Form questions vary between events, so headers are matched against a list
  * of aliases per portal field (configurable in Admin → Settings and stored in
- * app_settings.form_field_mapping). Unmapped columns are preserved in
- * ideas.other_details unless listed in `ignore`.
+ * app_settings.form_field_mapping). Unmapped columns are kept in
+ * ideas.other_details unless ignored — the score/total columns the portal
+ * writes back into the same sheet are always ignored.
  */
 
 export const FORM_FIELDS = [
   "submitted_at",
   "register_number",
   "name",
-  "department",
-  "year",
-  "section",
   "email",
   "phone",
-  "title",
-  "problem_statement",
-  "idea_description",
-  "team_details",
+  "department",
+  "section",
+  "abstract",
   "ppt_url",
 ] as const;
 
@@ -29,18 +26,14 @@ export type FormField = (typeof FORM_FIELDS)[number];
 
 export const FORM_FIELD_LABELS: Record<FormField, string> = {
   submitted_at: "Submission timestamp",
-  register_number: "Register number (unique id)",
+  register_number: "Register number",
   name: "Student name",
+  email: "Email address",
+  phone: "Phone number",
   department: "Department",
-  year: "Year",
   section: "Section",
-  email: "Email",
-  phone: "Phone",
-  title: "Idea title",
-  problem_statement: "Problem statement",
-  idea_description: "Idea description",
-  team_details: "Team details",
-  ppt_url: "PPT / presentation URL",
+  abstract: "Abstract of the idea",
+  ppt_url: "Presentation (PPT/PDF Drive link)",
 };
 
 export const formFieldMappingSchema = z.object({
@@ -54,17 +47,21 @@ export const DEFAULT_FORM_FIELD_MAPPING: FormFieldMapping = {
   fields: {
     submitted_at: ["Timestamp", "Submitted At"],
     register_number: ["Register Number", "Register No", "Reg No", "Registration Number", "Roll Number", "Roll No"],
-    name: ["Student Name", "Name", "Full Name", "Name of the Student"],
+    name: ["Name", "Student Name", "Full Name", "Name of the Student"],
+    email: ["Email Address", "Email", "Email ID", "Mail ID"],
+    phone: ["Phone Number", "Phone", "Mobile Number", "Mobile", "Contact Number"],
     department: ["Department", "Dept", "Branch"],
-    year: ["Year", "Year of Study"],
     section: ["Section", "Class"],
-    email: ["Email", "Email Address", "Email ID", "Mail ID"],
-    phone: ["Phone", "Phone Number", "Mobile", "Mobile Number", "Contact Number"],
-    title: ["Idea Title", "Project Title", "Title"],
-    problem_statement: ["Problem Statement", "Problem"],
-    idea_description: ["Idea Description", "Description", "Proposed Solution", "Solution"],
-    team_details: ["Team Details", "Team Members", "Team"],
-    ppt_url: ["PPT", "PPT URL", "PPT Link", "Upload PPT", "Presentation", "Presentation URL", "Upload your PPT"],
+    abstract: ["Abstract of the idea", "Abstract", "Idea Abstract", "Abstract of your idea"],
+    ppt_url: [
+      "Your presentation",
+      "Your Presentation (PPT/PDF Drive link)",
+      "Presentation",
+      "PPT",
+      "PPT Link",
+      "Presentation Link",
+      "Drive Link",
+    ],
   },
   ignore: [],
 };
@@ -78,44 +75,52 @@ export function resolveMapping(stored: unknown): FormFieldMapping {
   };
 }
 
-const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
+export const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-/** Maps each header index to a portal field (first alias match wins per field). */
-export function matchHeaders(headers: readonly string[], mapping: FormFieldMapping) {
+/**
+ * Maps header indexes to fields: exact (normalised) alias match first, then
+ * "header starts with alias" so long Google Form question titles such as
+ * "Your presentation (ppt/pdf's drive link)" still match "Your presentation".
+ */
+export function matchHeaders<F extends string>(
+  headers: readonly string[],
+  fields: Partial<Record<F, string[]>>,
+  order: readonly F[],
+  exclude: ReadonlySet<string> = new Set(),
+) {
   const normalized = headers.map((h) => normalizeHeader(String(h ?? "")));
-  const ignored = new Set(mapping.ignore.map(normalizeHeader));
-  const fieldByIndex = new Map<number, FormField>();
+  const fieldByIndex = new Map<number, F>();
   const used = new Set<number>();
+  normalized.forEach((h, i) => exclude.has(h) && used.add(i));
 
-  for (const field of FORM_FIELDS) {
-    const aliases = (mapping.fields[field] ?? []).map(normalizeHeader);
-    for (const alias of aliases) {
-      const index = normalized.findIndex((h, i) => h === alias && !used.has(i));
-      if (index >= 0) {
-        fieldByIndex.set(index, field);
-        used.add(index);
-        break;
+  for (const pass of ["exact", "prefix"] as const) {
+    for (const field of order) {
+      if ([...fieldByIndex.values()].includes(field)) continue;
+      for (const alias of (fields[field] ?? []).map(normalizeHeader)) {
+        if (!alias) continue;
+        const index = normalized.findIndex(
+          (h, i) => !used.has(i) && (pass === "exact" ? h === alias : h.startsWith(alias)),
+        );
+        if (index >= 0) {
+          fieldByIndex.set(index, field);
+          used.add(index);
+          break;
+        }
       }
     }
   }
-
-  const missing = (["register_number", "name"] as const).filter((f) => ![...fieldByIndex.values()].includes(f));
-  return { fieldByIndex, ignored, normalized, missing };
+  return { fieldByIndex, normalized };
 }
 
 export interface NormalizedSubmission {
   _row: number;
   register_number: string;
   name: string;
-  department: string | null;
-  year: number | null;
-  section: string | null;
   email: string | null;
   phone: string | null;
-  title: string | null;
-  problem_statement: string | null;
-  idea_description: string | null;
-  team_details: string | null;
+  department: string | null;
+  section: string | null;
+  abstract: string | null;
   ppt_url: string | null;
   submitted_at: string | null;
   other_details: Record<string, string>;
@@ -125,21 +130,6 @@ export function normalizeRegisterNumber(value: string): string {
   return value.replace(/\s/g, "").toUpperCase();
 }
 
-const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
-const WORDS: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5 };
-
-export function parseYear(value: string): number | null {
-  const v = value.trim().toLowerCase();
-  if (!v) return null;
-  const digit = v.match(/\d+/);
-  if (digit) {
-    const n = Number(digit[0]);
-    return n >= 1 && n <= 6 ? n : null;
-  }
-  const first = v.split(/[\s-]+/)[0];
-  return ROMAN[first] ?? WORDS[first] ?? null;
-}
-
 /**
  * Accepts ISO strings (Apps Script sends Date.toISOString()) and Google Sheets
  * serial numbers (UNFORMATTED_VALUE reads). Returns ISO or null.
@@ -147,7 +137,6 @@ export function parseYear(value: string): number | null {
 export function parseTimestamp(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number" && Number.isFinite(value)) {
-    // Sheets serial date: days since 1899-12-30.
     return new Date(Math.round((value - 25569) * 86400 * 1000)).toISOString();
   }
   const text = String(value).trim();
@@ -169,60 +158,58 @@ export function firstUrl(value: string): string | null {
   return null;
 }
 
-const clean = (v: unknown) => {
+export const clean = (v: unknown) => {
   const s = v === null || v === undefined ? "" : String(v).trim();
   return s === "" ? null : s;
 };
 
 /**
- * Turns raw sheet rows into normalised submissions. `firstDataRow` is the
- * 1-based sheet row of rows[0] (for error messages).
+ * Turns raw response-sheet rows into normalised submissions.
+ * `excludeHeaders` are columns the portal owns (scores, total, …) — never ingested.
  */
 export function normalizeSubmissions(
   headers: readonly string[],
   rows: readonly (readonly unknown[])[],
   mapping: FormFieldMapping,
   firstDataRow = 2,
+  excludeHeaders: readonly string[] = [],
 ): { submissions: NormalizedSubmission[]; missingFields: string[] } {
-  const { fieldByIndex, ignored, normalized, missing } = matchHeaders(headers, mapping);
-  if (missing.length > 0) return { submissions: [], missingFields: missing };
+  const exclude = new Set([...excludeHeaders, ...mapping.ignore].map(normalizeHeader).filter(Boolean));
+  const { fieldByIndex, normalized } = matchHeaders(headers, mapping.fields, FORM_FIELDS, exclude);
+  const mapped = new Set(fieldByIndex.values());
+  if (!mapped.has("register_number") && !mapped.has("email")) {
+    return { submissions: [], missingFields: ["register_number or email"] };
+  }
 
   const submissions: NormalizedSubmission[] = [];
   rows.forEach((row, r) => {
     if (row.every((cell) => clean(cell) === null)) return;
-
     const values: Partial<Record<FormField, unknown>> = {};
     const other: Record<string, string> = {};
     headers.forEach((header, i) => {
       const field = fieldByIndex.get(i);
       if (field) values[field] = row[i];
-      else if (!ignored.has(normalized[i]) && clean(row[i]) !== null && clean(header) !== null) {
+      else if (!exclude.has(normalized[i]) && clean(row[i]) !== null && clean(header) !== null) {
         other[String(header).trim()] = String(row[i]).trim().slice(0, 5000);
       }
     });
 
     const rawPpt = clean(values.ppt_url);
-    const ppt = rawPpt ? firstUrl(rawPpt) : null;
-    if (rawPpt && rawPpt.includes(",")) other["PPT (all files)"] = rawPpt;
+    if (rawPpt && rawPpt.includes(",")) other["Presentation (all files)"] = rawPpt;
 
     submissions.push({
       _row: firstDataRow + r,
       register_number: normalizeRegisterNumber(clean(values.register_number) ?? ""),
       name: clean(values.name) ?? "",
-      department: clean(values.department),
-      year: parseYear(clean(values.year) ?? ""),
-      section: clean(values.section),
       email: clean(values.email)?.toLowerCase() ?? null,
       phone: clean(values.phone),
-      title: clean(values.title),
-      problem_statement: clean(values.problem_statement),
-      idea_description: clean(values.idea_description),
-      team_details: clean(values.team_details),
-      ppt_url: ppt,
+      department: clean(values.department),
+      section: clean(values.section),
+      abstract: clean(values.abstract),
+      ppt_url: rawPpt ? firstUrl(rawPpt) : null,
       submitted_at: parseTimestamp(values.submitted_at),
       other_details: other,
     });
   });
-
   return { submissions, missingFields: [] };
 }

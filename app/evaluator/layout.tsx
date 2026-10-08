@@ -5,7 +5,8 @@ import { getSettings } from "@/lib/data/settings";
 
 const NAV: NavItem[] = [
   { href: "/evaluator", label: "Dashboard", icon: "dashboard", exact: true },
-  { href: "/evaluator/students", label: "My Students", icon: "students" },
+  { href: "/evaluator/search", label: "Find Student", icon: "search" },
+  { href: "/evaluator/evaluations", label: "My Evaluations", icon: "evaluations" },
   { href: "/evaluator/profile", label: "Profile", icon: "profile" },
 ];
 

@@ -12,7 +12,7 @@
     "test:unit": "vitest run tests/unit",
     "test:db": "vitest run tests/db",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "db:seed": "node --env-file=.env.local scripts/seed.mjs --allocate --evaluate",
+    "db:seed": "node --env-file=.env.local scripts/seed.mjs --evaluate",
     "admin:create": "node --env-file=.env.local scripts/create-admin.mjs"
   },
   "dependencies": {

@@ -3,13 +3,6 @@ import { isTieBreakerId } from "@/lib/results/ranking";
 
 export const uuidSchema = z.uuid();
 
-/** Score must be an integer 1–10. Strings like "7" are accepted from forms; "7.5" is not. */
-export const scoreSchema = z.coerce
-  .number({ error: "Score is required" })
-  .int("Score must be a whole number")
-  .min(1, "Score must be at least 1")
-  .max(10, "Score must be at most 10");
-
 export const remarksSchema = z
   .string()
   .trim()
@@ -17,16 +10,17 @@ export const remarksSchema = z
   .optional()
   .transform((v) => (v ? v : null));
 
-export const submitEvaluationSchema = z.object({
-  assignmentId: uuidSchema,
-  score: scoreSchema,
-  remarks: remarksSchema,
-});
+/** {criterionId: integer}. Range against each criterion's max is enforced in the database. */
+export const scoresSchema = z.record(
+  z.uuid(),
+  z.number().int("Scores must be whole numbers").min(0, "Scores cannot be negative").max(100),
+);
 
-export const saveDraftSchema = z.object({
-  assignmentId: uuidSchema,
-  score: scoreSchema.nullable(),
+export const evaluationInputSchema = z.object({
+  studentId: uuidSchema,
+  scores: scoresSchema,
   remarks: remarksSchema,
+  domainIds: z.array(z.uuid()).max(20).default([]),
 });
 
 export const loginSchema = z.object({
@@ -49,7 +43,7 @@ export const evaluatorSchema = z.object({
     .max(120)
     .optional()
     .transform((v) => v || null),
-  maxAssignments: z.coerce.number().int().min(1).max(1000).default(50),
+  maxEvaluations: z.coerce.number().int().min(1).max(1000).default(50),
 });
 
 export const createEvaluatorSchema = evaluatorSchema.extend({
@@ -61,24 +55,45 @@ export const updateEvaluatorSchema = evaluatorSchema.extend({ id: uuidSchema });
 export const eventStatusSchema = z.enum(["NOT_STARTED", "LIVE", "PAUSED", "CLOSED"]);
 export type EventStatus = z.infer<typeof eventStatusSchema>;
 
-export const allocationConfigSchema = z.object({
-  type: z.enum(["INITIAL", "INCREMENTAL", "FULL_REALLOCATION"]),
-  maxPerEvaluator: z.coerce.number().int().min(1).max(1000),
-  evaluatorsPerStudent: z.coerce.number().int().min(1).max(5),
-});
+export const criterionSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    name: z.string().trim().min(1, "Name is required").max(120),
+    description: z
+      .string()
+      .trim()
+      .max(1000)
+      .optional()
+      .transform((v) => v || null),
+    maxMarks: z.coerce.number().int("Whole number").min(1, "At least 1").max(100, "At most 100"),
+    inputStyle: z.enum(["STARS", "SLIDER", "NUMBER"]),
+    sortOrder: z.coerce.number().int().min(0).max(1000).default(0),
+    isActive: z.boolean().default(true),
+    sheetColumn: z
+      .string()
+      .trim()
+      .max(200)
+      .optional()
+      .transform((v) => v || null),
+  })
+  .refine((c) => c.inputStyle !== "STARS" || c.maxMarks <= 10, {
+    message: "Star ratings support at most 10 marks — use a slider or number for larger maximums",
+    path: ["maxMarks"],
+  });
 
-export const confirmAllocationSchema = allocationConfigSchema.extend({
-  seed: z.string().regex(/^[a-f0-9]{64}$/, "Invalid seed"),
-  fingerprint: z.string().regex(/^[a-f0-9]{64}$/, "Invalid fingerprint"),
+export const domainSchema = z.object({
+  id: uuidSchema.optional(),
+  name: z.string().trim().min(1, "Name is required").max(80),
+  sortOrder: z.coerce.number().int().min(0).max(1000).default(0),
+  isActive: z.boolean().default(true),
 });
 
 export const settingsSchema = z.object({
-  allowResubmission: z.coerce.boolean(),
+  allowResubmission: z.boolean(),
+  maxEvaluationsPerEvaluator: z.coerce.number().int().min(1).max(1000),
   tieBreakers: z
     .array(z.string())
-    .max(5)
+    .max(10)
     .refine((ids) => ids.every(isTieBreakerId), "Unknown tie-breaker")
     .refine((ids) => new Set(ids).size === ids.length, "Duplicate tie-breaker"),
 });
-
-export const csvImportRowSchema = z.record(z.string(), z.string());

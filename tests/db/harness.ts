@@ -109,22 +109,27 @@ export async function createStudent(db: PGlite, registerNumber: string, extra: R
       registerNumber,
       (extra.name as string) ?? `Student ${registerNumber}`,
       (extra.department as string) ?? "CSE",
-      `${registerNumber.toLowerCase()}@example.edu`,
+      (extra.email as string) ?? `${registerNumber.toLowerCase()}@example.edu`,
       "9999999999",
     ],
   );
   await db.query(
-    "insert into public.ideas (student_id, problem_statement, ppt_url) values ($1, 'A problem', 'https://example.com/p.pptx')",
+    "insert into public.ideas (student_id, abstract, ppt_url) values ($1, 'An abstract', 'https://example.com/p.pptx')",
     [rows[0].id],
   );
   return rows[0].id;
 }
 
-export async function assign(db: PGlite, studentId: string, evaluatorId: string) {
+export async function createCriterion(db: PGlite, name: string, maxMarks: number, style = "SLIDER") {
   const { rows } = await db.query<{ id: string }>(
-    "insert into public.evaluation_assignments (student_id, evaluator_id) values ($1, $2) returning id",
-    [studentId, evaluatorId],
+    "insert into public.evaluation_criteria (name, max_marks, input_style) values ($1, $2, $3) returning id",
+    [name, maxMarks, style],
   );
+  return rows[0].id;
+}
+
+export async function createDomain(db: PGlite, name: string) {
+  const { rows } = await db.query<{ id: string }>("insert into public.domains (name) values ($1) returning id", [name]);
   return rows[0].id;
 }
 

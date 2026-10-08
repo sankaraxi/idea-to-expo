@@ -1,21 +1,17 @@
 import { AlertTriangle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PptViewer } from "@/components/shared/ppt-viewer";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDateTime } from "@/lib/format";
 import { pptEmbedUrl, safeExternalUrl } from "@/lib/ppt";
-import type { IdeaRow } from "@/types/database";
+import type { Json } from "@/types/database";
 
-type Idea = Pick<
-  IdeaRow,
-  "title" | "problem_statement" | "idea_description" | "team_details" | "ppt_url" | "other_details" | "submission_status"
->;
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h3>
-      <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">{value || <span className="text-muted-foreground">Not provided</span>}</p>
-    </div>
-  );
+interface Idea {
+  abstract: string | null;
+  ppt_url: string | null;
+  other_details: Json;
+  submission_status: "SUBMITTED" | "INCOMPLETE";
+  submitted_at: string | null;
 }
 
 export function SubmissionDetails({ idea }: { idea: Idea | null }) {
@@ -24,7 +20,7 @@ export function SubmissionDetails({ idea }: { idea: Idea | null }) {
       <Card>
         <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
           <AlertTriangle className="size-5 text-warning" />
-          This student has no idea submission on record.
+          No problem statement has been submitted by this student yet.
         </CardContent>
       </Card>
     );
@@ -39,12 +35,16 @@ export function SubmissionDetails({ idea }: { idea: Idea | null }) {
     <div className="space-y-5">
       <Card>
         <CardHeader>
-          <CardTitle>{idea.title || "Idea submission"}</CardTitle>
+          <CardTitle>Abstract of the idea</CardTitle>
+          <CardAction className="flex items-center gap-2">
+            {idea.submission_status !== "SUBMITTED" && <StatusBadge status={idea.submission_status} />}
+            {idea.submitted_at && <span className="text-xs text-muted-foreground">{formatDateTime(idea.submitted_at)}</span>}
+          </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Field label="Problem statement" value={idea.problem_statement} />
-          <Field label="Idea description" value={idea.idea_description} />
-          {idea.team_details && <Field label="Team details" value={idea.team_details} />}
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+            {idea.abstract || <span className="text-muted-foreground">No abstract provided.</span>}
+          </p>
           {other.length > 0 && (
             <div>
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Other details</h3>

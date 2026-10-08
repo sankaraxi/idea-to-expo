@@ -26,7 +26,7 @@ const formSchema = z.object({
   email: z.email("Enter a valid email"),
   employeeId: z.string().trim().max(50),
   department: z.string().trim().max(120),
-  maxAssignments: z.coerce.number<number>().int().min(1).max(1000),
+  maxEvaluations: z.coerce.number<number>().int().min(1).max(1000),
   password: z.string(),
 });
 type FormValues = z.infer<typeof formSchema>;
@@ -47,7 +47,7 @@ function EvaluatorForm({
         ? formSchema.extend({ password: z.string().min(8, "At least 8 characters").max(72) })
         : formSchema,
     ),
-    defaultValues: { name: "", email: "", employeeId: "", department: "", maxAssignments: 50, password: "", ...defaults },
+    defaultValues: { name: "", email: "", employeeId: "", department: "", maxEvaluations: 50, password: "", ...defaults },
   });
   const errors = form.formState.errors;
 
@@ -81,7 +81,7 @@ function EvaluatorForm({
       {field("email", "Email (login)", { type: "email", autoComplete: "off" })}
       <div className="grid grid-cols-2 gap-3">
         {field("employeeId", "Employee ID")}
-        {field("maxAssignments", "Max students", { type: "number", min: 1, max: 1000 })}
+        {field("maxEvaluations", "Max evaluations", { type: "number", min: 1, max: 1000 })}
       </div>
       {field("department", "Department")}
       {mode === "create" && field("password", "Initial password", { type: "password", autoComplete: "new-password" })}
@@ -121,9 +121,9 @@ export function EvaluatorRowActions({ row }: { row: EvaluatorProgressRow }) {
   const active = row.status === "ACTIVE";
 
   const toggle = () => {
-    const pendingWork = Number(row.assigned_count) - Number(row.completed_count);
+    const drafts = Number(row.in_progress_count);
     const message = active
-      ? `Disable ${row.name}? They will be signed out of all data immediately.${pendingWork ? ` ${pendingWork} evaluation(s) are still pending — reallocate them afterwards.` : ""}`
+      ? `Disable ${row.name}? They lose access immediately.${drafts ? ` They have ${drafts} unsubmitted draft(s) — release them from the Evaluations page so other evaluators can take those students.` : ""}`
       : `Re-enable ${row.name}?`;
     if (!window.confirm(message)) return;
     start(async () => {
@@ -161,7 +161,7 @@ export function EvaluatorRowActions({ row }: { row: EvaluatorProgressRow }) {
               email: row.email,
               employeeId: row.employee_id ?? "",
               department: row.department ?? "",
-              maxAssignments: row.max_assignments,
+              maxEvaluations: row.max_evaluations,
             }}
             onDone={() => setEditOpen(false)}
           />

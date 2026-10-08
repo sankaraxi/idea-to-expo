@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { FileUp, Loader2, RefreshCw } from "lucide-react";
+import { Download, FileUp, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +19,7 @@ function summary(r: IngestResult) {
   return `${r.received} rows · ${r.inserted} new · ${r.updated} updated · ${r.unchanged} unchanged · ${r.skipped} skipped`;
 }
 
-export function StudentImportControls() {
+export function StudentImportControls({ showFormSync = true, showCsv = true }: { showFormSync?: boolean; showCsv?: boolean }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<IngestResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -50,24 +50,38 @@ export function StudentImportControls() {
 
   return (
     <>
-      <Button variant="outline" onClick={pull} disabled={pending}>
-        {pending ? <Loader2 className="animate-spin" /> : <RefreshCw />} Sync Google Form
-      </Button>
-      <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={pending}>
-        <FileUp /> Import CSV
-      </Button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".csv,text/csv"
-        className="hidden"
-        onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
-      />
+      {showFormSync && (
+        <Button variant="outline" onClick={pull} disabled={pending}>
+          {pending ? <Loader2 className="animate-spin" /> : <RefreshCw />} Sync problem statements
+        </Button>
+      )}
+      {showCsv && (
+        <>
+          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={pending}>
+            <FileUp /> Import students CSV
+          </Button>
+          <a
+            href="/templates/students-template.csv"
+            download
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            title="Columns: name, register number, gender, department, email, phone number"
+          >
+            <Download className="size-3.5" /> CSV template
+          </a>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
+          />
+        </>
+      )}
 
       <Dialog open={!!result && result.errors.length > 0} onOpenChange={(o) => !o && setResult(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Import finished with issues</DialogTitle>
+            <DialogTitle>Finished with issues</DialogTitle>
             <DialogDescription>{result && summary(result)}</DialogDescription>
           </DialogHeader>
           <ul className="max-h-72 space-y-1 overflow-y-auto text-sm">

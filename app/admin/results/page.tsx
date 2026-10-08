@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getDepartments, getResults } from "@/lib/data/admin";
 import { stringParam } from "@/lib/format";
-import { TIE_BREAKERS, isTieBreakerId } from "@/lib/results/ranking";
+import { tieBreakerOptions } from "@/lib/results/ranking";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Results" };
@@ -15,10 +15,11 @@ export const metadata: Metadata = { title: "Results" };
 export default async function ResultsPage({ searchParams }: PageProps<"/admin/results">) {
   const sp = await searchParams;
   const department = stringParam(sp.department);
-  const [{ ranked, settings }, departments] = await Promise.all([getResults(), getDepartments()]);
+  const [{ ranked, tieBreakers, criteria }, departments] = await Promise.all([getResults(), getDepartments()]);
   const rows = department ? ranked.filter((r) => r.department === department) : ranked;
-  const usesAdminPriority = settings.tie_breakers.includes("ADMIN_PRIORITY_ASC");
-  const rules = settings.tie_breakers.filter(isTieBreakerId).map((id) => TIE_BREAKERS[id].label);
+  const labels = new Map(tieBreakerOptions(criteria).map((o) => [o.id, o.label]));
+  const rules = tieBreakers.map((id) => labels.get(id)).filter(Boolean);
+  const usesAdminPriority = tieBreakers.includes("ADMIN_PRIORITY_ASC");
 
   return (
     <div className="space-y-4">
@@ -26,7 +27,7 @@ export default async function ResultsPage({ searchParams }: PageProps<"/admin/re
         title="Results"
         description={
           <>
-            Final score = average of all completed evaluator scores. Ties broken by:{" "}
+            Ranked by total score (as a percentage of the maximum). Ties broken by:{" "}
             {rules.length ? rules.join(" → ") : "none (tied students share a rank)"}.{" "}
             <Link href="/admin/settings" className="text-primary hover:underline">
               Change
@@ -44,10 +45,10 @@ export default async function ResultsPage({ searchParams }: PageProps<"/admin/re
           ))}
         </select>
         <Button type="submit" variant="secondary">Apply</Button>
-        <span className="text-sm text-muted-foreground">{rows.length} ranked students</span>
+        <span className="text-sm text-muted-foreground">{rows.length} evaluated students</span>
       </form>
 
-      <div className="rounded-lg border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
@@ -55,17 +56,23 @@ export default async function ResultsPage({ searchParams }: PageProps<"/admin/re
               <TableHead>Register No</TableHead>
               <TableHead>Student</TableHead>
               <TableHead className="hidden md:table-cell">Department</TableHead>
-              <TableHead className="text-right">Score</TableHead>
-              <TableHead className="hidden text-right sm:table-cell">Scores</TableHead>
-              <TableHead className="text-right">Evaluations</TableHead>
+              {criteria.map((c) => (
+                <TableHead key={c.id} className="hidden text-right xl:table-cell" title={`max ${c.max_marks}`}>
+                  {c.name}
+                </TableHead>
+              ))}
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead className="text-right">%</TableHead>
+              <TableHead className="hidden lg:table-cell">Domains</TableHead>
+              <TableHead className="hidden lg:table-cell">Evaluator</TableHead>
               {usesAdminPriority && <TableHead className="text-right">Tie-break</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                  No completed evaluations yet.
+                <TableCell colSpan={9 + criteria.length} className="py-8 text-center text-muted-foreground">
+                  No submitted evaluations yet.
                 </TableCell>
               </TableRow>
             )}
@@ -73,7 +80,11 @@ export default async function ResultsPage({ searchParams }: PageProps<"/admin/re
               <TableRow key={r.studentId} className={cn(r.rank <= 3 && "bg-primary/[0.03]")}>
                 <TableCell className="font-semibold tabular-nums">
                   {r.rank}
-                  {r.tied && <span className="ml-1 text-xs font-normal text-warning" title="Tied">=</span>}
+                  {r.tied && (
+                    <span className="ml-1 text-xs font-normal text-warning" title="Tied">
+                      =
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="font-mono text-xs">{r.registerNumber}</TableCell>
                 <TableCell>
@@ -82,9 +93,18 @@ export default async function ResultsPage({ searchParams }: PageProps<"/admin/re
                   </Link>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">{r.department ?? "—"}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{r.finalScore.toFixed(2)}</TableCell>
-                <TableCell className="hidden text-right text-xs text-muted-foreground tabular-nums sm:table-cell">{r.scores.join(", ")}</TableCell>
-                <TableCell className="text-right tabular-nums">{r.evaluationCount}</TableCell>
+                {criteria.map((c) => (
+                  <TableCell key={c.id} className="hidden text-right tabular-nums xl:table-cell">
+                    {r.criterionScores[c.id] ?? "–"}
+                  </TableCell>
+                ))}
+                <TableCell className="text-right font-semibold tabular-nums">
+                  {r.total}
+                  <span className="text-xs font-normal text-muted-foreground">/{r.maxTotal}</span>
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{r.percentage}</TableCell>
+                <TableCell className="hidden text-sm lg:table-cell">{r.domains ?? "—"}</TableCell>
+                <TableCell className="hidden text-sm lg:table-cell">{r.evaluatorName ?? "—"}</TableCell>
                 {usesAdminPriority && (
                   <TableCell className="flex justify-end">
                     <TieBreakInput studentId={r.studentId} value={r.tieBreakPriority ?? null} />

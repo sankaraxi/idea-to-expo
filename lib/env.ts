@@ -25,7 +25,6 @@ const serverSchema = z.object({
 const googleSchema = z.object({
   GOOGLE_CLIENT_EMAIL: z.email(),
   GOOGLE_PRIVATE_KEY: z.string().min(100),
-  GOOGLE_SHEET_ID: z.string().min(10),
 });
 
 export function serverEnv() {
@@ -35,12 +34,14 @@ export function serverEnv() {
 export interface GoogleConfig {
   clientEmail: string;
   privateKey: string;
-  sheetId: string;
+  /** Optional reporting spreadsheet (Students / Evaluators / Evaluations / Results / Dashboard tabs). */
+  sheetId: string | null;
+  /** Problem statement (form response) spreadsheet: ingested, and scores are written back into it. */
   formResponseSheetId: string | null;
   formResponseRange: string;
 }
 
-/** Returns null when Google is not configured (sync is then reported as disabled). */
+/** Returns null when Google credentials are not configured (sync is then reported as disabled). */
 export function googleConfig(): GoogleConfig | null {
   const parsed = googleSchema.safeParse(process.env);
   if (!parsed.success) return null;
@@ -48,7 +49,7 @@ export function googleConfig(): GoogleConfig | null {
     clientEmail: parsed.data.GOOGLE_CLIENT_EMAIL,
     // Vercel/.env store the PEM with literal "\n".
     privateKey: parsed.data.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    sheetId: parsed.data.GOOGLE_SHEET_ID,
+    sheetId: process.env.GOOGLE_SHEET_ID || null,
     formResponseSheetId: process.env.GOOGLE_FORM_RESPONSE_SHEET_ID || null,
     formResponseRange: process.env.GOOGLE_FORM_RESPONSE_RANGE || "Form Responses 1",
   };

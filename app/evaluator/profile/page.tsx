@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PageHeader, ProgressBar } from "@/components/shared/ui-bits";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireEvaluatorPage } from "@/lib/auth/session";
-import { getMyAssignments, progressOf } from "@/lib/data/evaluator";
+import { getMyQuota } from "@/lib/data/evaluator";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Profile" };
@@ -10,11 +10,10 @@ export const metadata: Metadata = { title: "Profile" };
 export default async function ProfilePage() {
   const user = await requireEvaluatorPage();
   const supabase = await createClient();
-  const [{ data: me }, rows] = await Promise.all([
+  const [{ data: me }, quota] = await Promise.all([
     supabase.from("evaluators").select("name, email, employee_id, department, status").eq("id", user.evaluatorId).single(),
-    getMyAssignments(),
+    getMyQuota(user.evaluatorId),
   ]);
-  const progress = progressOf(rows);
 
   const fields = [
     ["Name", me?.name],
@@ -39,10 +38,12 @@ export default async function ProfilePage() {
           </dl>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span>Completed {progress.completed} of {progress.assigned}</span>
-              <span className="tabular-nums text-muted-foreground">{progress.percent}%</span>
+              <span>
+                Evaluated {quota.completed} of your limit of {quota.cap}
+              </span>
+              <span className="tabular-nums text-muted-foreground">{quota.percent}%</span>
             </div>
-            <ProgressBar value={progress.percent} />
+            <ProgressBar value={quota.percent} />
           </div>
         </CardContent>
       </Card>

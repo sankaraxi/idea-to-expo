@@ -17,12 +17,14 @@ export const metadata: Metadata = { title: "Google Sheets Sync" };
 export default async function SyncPage() {
   const overview = await getSyncOverview();
   const google = googleConfig();
-  const sheetUrl = google ? `https://docs.google.com/spreadsheets/d/${google.sheetId}` : null;
+  const sheetUrl = google?.sheetId ? `https://docs.google.com/spreadsheets/d/${google.sheetId}` : null;
+  const responseUrl = google?.formResponseSheetId ? `https://docs.google.com/spreadsheets/d/${google.formResponseSheetId}` : null;
   const pending = overview.counts.PENDING + overview.counts.PROCESSING;
 
   const checks = [
-    ["Live sheet credentials (GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_SHEET_ID)", !!google],
-    ["Form response sheet (GOOGLE_FORM_RESPONSE_SHEET_ID)", !!google?.formResponseSheetId],
+    ["Service account (GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY)", !!google],
+    ["Problem statement sheet — ingest + score write-back (GOOGLE_FORM_RESPONSE_SHEET_ID)", !!google?.formResponseSheetId],
+    ["Optional reporting sheet (GOOGLE_SHEET_ID)", !!google?.sheetId],
     ["Apps Script webhook secret (FORM_SYNC_SECRET)", !!secret("FORM_SYNC_SECRET")],
     ["Scheduler secret (CRON_SECRET)", !!secret("CRON_SECRET")],
   ] as const;
@@ -52,15 +54,23 @@ export default async function SyncPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Live sheet</CardTitle>
-          <CardDescription>Tabs: Students, Evaluators, Assignments, Evaluations, Results, Dashboard.</CardDescription>
-          {sheetUrl && (
-            <CardAction>
-              <a href={sheetUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
-                Open sheet <ExternalLink className="size-3.5" />
+          <CardTitle>Google Sheets</CardTitle>
+          <CardDescription>
+            Scores and totals are written into the problem statement sheet (columns mapped in Settings). The optional reporting
+            sheet gets Students, Evaluators, Evaluations, Results and Dashboard tabs.
+          </CardDescription>
+          <CardAction className="flex flex-col items-end gap-1">
+            {responseUrl && (
+              <a href={responseUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+                Problem statement sheet <ExternalLink className="size-3.5" />
               </a>
-            </CardAction>
-          )}
+            )}
+            {sheetUrl && (
+              <a href={sheetUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+                Reporting sheet <ExternalLink className="size-3.5" />
+              </a>
+            )}
+          </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
           <SyncControls configured={!!google} pending={pending} />
@@ -89,10 +99,10 @@ export default async function SyncPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Google Form synchronisation</CardTitle>
+          <CardTitle>Problem statement synchronisation</CardTitle>
           <CardDescription>Submissions arrive via the Apps Script webhook on each form submit, or can be pulled on demand.</CardDescription>
           <CardAction className="flex gap-2">
-            <StudentImportControls />
+            <StudentImportControls showCsv={false} />
           </CardAction>
         </CardHeader>
         <CardContent>
