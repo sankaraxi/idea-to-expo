@@ -54,6 +54,7 @@ export type StudentRow = {
 export type IdeaRow = {
   id: string;
   student_id: string;
+  problem_statement: string | null;
   abstract: string | null;
   ppt_url: string | null;
   other_details: Json;
@@ -266,6 +267,7 @@ export type StudentForEvaluation = {
     email: string | null;
   };
   idea: {
+    problem_statement: string | null;
     abstract: string | null;
     ppt_url: string | null;
     other_details: Json;

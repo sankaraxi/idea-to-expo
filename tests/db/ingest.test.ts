@@ -25,6 +25,7 @@ const sub = (o: Partial<NormalizedSubmission> = {}): NormalizedSubmission => ({
   phone: "777",
   department: "AI&DS",
   section: "B",
+  problem_statement: "Households cannot see their water usage",
   abstract: "Smart water meter",
   ppt_url: "https://drive.google.com/file/d/abc/view",
   submitted_at: "2026-10-01T10:00:00.000Z",
@@ -100,8 +101,8 @@ describe.skipIf(!hasMysql)("problem statement ingestion", () => {
     await db.drop();
   });
 
-  const ideas = () => select<{ abstract: string; matched_by: string; response_row: number; submission_status: string; ppt_url: string | null }>(
-    "SELECT abstract, matched_by, response_row, submission_status, ppt_url FROM ideas ORDER BY created_at",
+  const ideas = () => select<{ problem_statement: string | null; abstract: string; matched_by: string; response_row: number; submission_status: string; ppt_url: string | null }>(
+    "SELECT problem_statement, abstract, matched_by, response_row, submission_status, ppt_url FROM ideas ORDER BY created_at",
   );
 
   it("matches by register number and only fills blank student fields", async () => {
@@ -109,8 +110,18 @@ describe.skipIf(!hasMysql)("problem statement ingestion", () => {
     // CSV name/phone win; blank section is filled from the form.
     expect(await one(pool(), "SELECT name, phone, section, department FROM students")).toEqual({ name: "Asha K", phone: "111", section: "B", department: "AI&DS" });
     expect(await ideas()).toEqual([
-      { abstract: "Smart water meter", matched_by: "REGISTER_NUMBER", response_row: 2, submission_status: "SUBMITTED", ppt_url: "https://drive.google.com/file/d/abc/view" },
+      { problem_statement: "Households cannot see their water usage", abstract: "Smart water meter", matched_by: "REGISTER_NUMBER", response_row: 2, submission_status: "SUBMITTED", ppt_url: "https://drive.google.com/file/d/abc/view" },
     ]);
+  });
+
+  it("stores and updates the problem statement separately from the abstract", async () => {
+    await ingestSubmissions([sub()], "APPS_SCRIPT", null);
+    const edited = await ingestSubmissions([sub({ problem_statement: "Leaks go unnoticed for weeks", submitted_at: "2026-10-02T10:00:00.000Z" })], "APPS_SCRIPT", null);
+    expect(edited).toMatchObject({ updated: 1 });
+    expect(await ideas()).toEqual([expect.objectContaining({ problem_statement: "Leaks go unnoticed for weeks", abstract: "Smart water meter" })]);
+    const missing = await ingestSubmissions([sub({ problem_statement: null, submitted_at: "2026-10-03T10:00:00.000Z" })], "APPS_SCRIPT", null);
+    expect(missing).toMatchObject({ updated: 1 });
+    expect(await ideas()).toEqual([expect.objectContaining({ problem_statement: null, abstract: "Smart water meter" })]);
   });
 
   it("is idempotent on replay and ignores JSON key order", async () => {

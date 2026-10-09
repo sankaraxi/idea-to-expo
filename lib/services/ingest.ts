@@ -265,6 +265,7 @@ export async function ingestSubmissions(
         }
 
         const next = {
+          problem_statement: r.problem_statement,
           abstract: r.abstract,
           ppt_url: r.ppt_url,
           other_details: other,
@@ -275,7 +276,7 @@ export async function ingestSubmissions(
         };
         const ideaChanged =
           !existingIdea ||
-          existingIdea.abstract !== next.abstract || existingIdea.ppt_url !== next.ppt_url ||
+          existingIdea.problem_statement !== next.problem_statement || existingIdea.abstract !== next.abstract || existingIdea.ppt_url !== next.ppt_url ||
           stable(existingIdea.other_details) !== stable(next.other_details) ||
           existingIdea.submission_status !== next.submission_status ||
           (existingIdea.submitted_at ? Date.parse(existingIdea.submitted_at) : null) !== (next.submitted_at?.getTime() ?? null) ||
@@ -301,17 +302,17 @@ export async function ingestSubmissions(
             await run(tx, `UPDATE students SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`, [...cols.map((c) => patch[c]), studentId]);
           }
           if (ideaChanged) {
-            const values = [next.abstract, next.ppt_url, JSON.stringify(next.other_details), next.submission_status, next.submitted_at, next.response_row, next.matched_by];
+            const values = [next.problem_statement, next.abstract, next.ppt_url, JSON.stringify(next.other_details), next.submission_status, next.submitted_at, next.response_row, next.matched_by];
             if (existingIdea) {
               await run(
                 tx,
-                "UPDATE ideas SET abstract = ?, ppt_url = ?, other_details = CAST(? AS JSON), submission_status = ?, submitted_at = ?, response_row = ?, matched_by = ? WHERE id = ?",
+                "UPDATE ideas SET problem_statement = ?, abstract = ?, ppt_url = ?, other_details = CAST(? AS JSON), submission_status = ?, submitted_at = ?, response_row = ?, matched_by = ? WHERE id = ?",
                 [...values, existingIdea.id],
               );
             } else {
               await run(
                 tx,
-                "INSERT INTO ideas (id, student_id, abstract, ppt_url, other_details, submission_status, submitted_at, response_row, matched_by) VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?)",
+                "INSERT INTO ideas (id, student_id, problem_statement, abstract, ppt_url, other_details, submission_status, submitted_at, response_row, matched_by) VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?)",
                 [ideaId, studentId, ...values],
               );
             }
@@ -325,7 +326,7 @@ export async function ingestSubmissions(
         remember(stored as StudentRow);
         ideas.set(studentId, {
           ...(existingIdea ?? ({ id: ideaId, student_id: studentId } as IdeaRow)),
-          abstract: next.abstract, ppt_url: next.ppt_url, other_details: next.other_details, submission_status: next.submission_status,
+          problem_statement: next.problem_statement, abstract: next.abstract, ppt_url: next.ppt_url, other_details: next.other_details, submission_status: next.submission_status,
           submitted_at: next.submitted_at?.toISOString() ?? null, response_row: next.response_row, matched_by: next.matched_by,
         } as IdeaRow);
 

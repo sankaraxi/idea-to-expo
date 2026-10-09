@@ -113,10 +113,11 @@ try {
       if (!idea) {
         const hasPpt = i % 12 !== 11;
         await q(
-          "INSERT INTO ideas (id, student_id, abstract, ppt_url, other_details, submission_status, submitted_at, response_row, matched_by) VALUES (?, ?, ?, ?, '{}', ?, ?, ?, 'REGISTER_NUMBER')",
+          "INSERT INTO ideas (id, student_id, problem_statement, abstract, ppt_url, other_details, submission_status, submitted_at, response_row, matched_by) VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, 'REGISTER_NUMBER')",
           [
             randomUUID(), student.id,
-            `${PROBLEMS[i % PROBLEMS.length]}. A Python prototype built with Flask and pandas, validated with a small survey of students.`,
+            PROBLEMS[i % PROBLEMS.length],
+            `A Python prototype for: ${PROBLEMS[i % PROBLEMS.length].toLowerCase()}. Built built with Flask and pandas, validated with a small survey of students.`,
             hasPpt ? `https://drive.google.com/file/d/seed-deck-${i + 1}/view` : null,
             hasPpt ? "SUBMITTED" : "INCOMPLETE",
             new Date(Date.UTC(2026, 9, 1, 9, i)), i + 2,

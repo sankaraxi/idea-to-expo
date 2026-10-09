@@ -344,7 +344,7 @@ export async function getStudentForEvaluation(evaluatorId: string, studentId: st
   const [idea, evaluation] = await Promise.all([
     one<NonNullable<StudentForEvaluation["idea"]>>(
       pool(),
-      "SELECT abstract, ppt_url, other_details, submission_status, submitted_at FROM ideas WHERE student_id = ?",
+      "SELECT problem_statement, abstract, ppt_url, other_details, submission_status, submitted_at FROM ideas WHERE student_id = ?",
       [studentId],
     ),
     one<EvaluationRow>(pool(), "SELECT * FROM evaluations WHERE student_id = ?", [studentId]),

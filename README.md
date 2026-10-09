@@ -30,7 +30,7 @@ Students CSV ──────────────► students (master data
 Problem statement Google Form      │ linked by register number → email (unmatched rows create a flagged student)
    └► response sheet ──► Apps Script webhook / "Sync problem statements"
                                    │
-Evaluator searches register no / name / email ──► opens student page (abstract + PPT/PDF)
+Evaluator searches register no / name / email ──► opens student page (problem statement + abstract + PPT/PDF)
    └► scores each admin-defined criterion (stars / slider / number) + ticks domains + remarks ──► Submit
                                    │
                          MySQL (source of truth) ──► sync queue ──► scores + total written back into
@@ -91,7 +91,7 @@ The worker runs right after each submission and every 15 s while "Auto-sync whil
 3. **Settings**: map the sheet score columns.
 4. **Evaluators**: add/activate evaluators and share credentials.
 5. **Dashboard → Go live.**
-6. Evaluators: Find Student (type the register number, Enter) → read abstract / open PPT → score criteria → tick domains → remarks → Submit.
+6. Evaluators: Find Student (type the register number, Enter) → read the problem statement and abstract / open PPT → score criteria → tick domains → remarks → Submit.
 7. Monitor **Dashboard / Evaluations / Sync**. If an evaluator leaves, release their drafts from **Evaluations**.
 8. **Pause** freezes submissions (drafts keep saving). **Close** at the end; **Results** shows the ranking.
 

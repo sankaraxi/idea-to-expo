@@ -87,7 +87,7 @@ export async function createStudent(registerNumber: string, extra: { name?: stri
     extra.email === undefined ? `${registerNumber.toLowerCase()}@example.edu` : extra.email,
     "9999999999",
   ]);
-  await run(pool(), "INSERT INTO ideas (id, student_id, abstract, ppt_url) VALUES (?, ?, 'An abstract', 'https://example.com/p.pptx')", [uuid(), id]);
+  await run(pool(), "INSERT INTO ideas (id, student_id, problem_statement, abstract, ppt_url) VALUES (?, ?, 'A problem', 'An abstract', 'https://example.com/p.pptx')", [uuid(), id]);
   return id;
 }
 

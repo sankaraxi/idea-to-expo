@@ -18,6 +18,7 @@ export const FORM_FIELDS = [
   "phone",
   "department",
   "section",
+  "problem_statement",
   "abstract",
   "ppt_url",
 ] as const;
@@ -32,6 +33,7 @@ export const FORM_FIELD_LABELS: Record<FormField, string> = {
   phone: "Phone number",
   department: "Department",
   section: "Section",
+  problem_statement: "Problem statement",
   abstract: "Abstract of the idea",
   ppt_url: "Presentation (PPT/PDF Drive link)",
 };
@@ -52,6 +54,7 @@ export const DEFAULT_FORM_FIELD_MAPPING: FormFieldMapping = {
     phone: ["Phone Number", "Phone", "Mobile Number", "Mobile", "Contact Number"],
     department: ["Department", "Dept", "Branch"],
     section: ["Section", "Class"],
+    problem_statement: ["Problem Statement", "Problem", "Problem Statement of the idea"],
     abstract: ["Abstract of the idea", "Abstract", "Idea Abstract", "Abstract of your idea"],
     ppt_url: [
       "Your presentation",
@@ -126,6 +129,7 @@ export interface NormalizedSubmission {
   phone: string | null;
   department: string | null;
   section: string | null;
+  problem_statement: string | null;
   abstract: string | null;
   ppt_url: string | null;
   submitted_at: string | null;
@@ -212,6 +216,7 @@ export function normalizeSubmissions(
       phone: clean(values.phone),
       department: clean(values.department),
       section: clean(values.section),
+      problem_statement: clean(values.problem_statement),
       abstract: clean(values.abstract),
       ppt_url: rawPpt ? firstUrl(rawPpt) : null,
       submitted_at: parseTimestamp(values.submitted_at),

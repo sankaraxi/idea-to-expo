@@ -94,6 +94,7 @@ describe("problem statement form mapping", () => {
     "Phone Number",
     "Department",
     "Section",
+    "Problem Statement",
     "Abstract of the idea",
     "Your presentation (ppt/pdf's drive link)",
     "Email address",
@@ -104,7 +105,7 @@ describe("problem statement form mapping", () => {
   it("maps the problem statement questions, incl. long titles by prefix", () => {
     const { submissions, missingFields } = normalizeSubmissions(
       headers,
-      [["2026-10-01T10:00:00.000Z", "Asha", " 23ad 001 ", "98765", "AI&DS", "B", "Smart meters", "https://drive.google.com/open?id=abc", "ASHA@x.edu", "8", "40"]],
+      [["2026-10-01T10:00:00.000Z", "Asha", " 23ad 001 ", "98765", "AI&DS", "B", "No visibility of usage", "Smart meters", "https://drive.google.com/open?id=abc", "ASHA@x.edu", "8", "40"]],
       DEFAULT_FORM_FIELD_MAPPING,
       2,
       ["Innovation", "Total"],
@@ -115,6 +116,7 @@ describe("problem statement form mapping", () => {
       name: "Asha",
       email: "asha@x.edu",
       section: "B",
+      problem_statement: "No visibility of usage",
       abstract: "Smart meters",
       ppt_url: "https://drive.google.com/open?id=abc",
     });

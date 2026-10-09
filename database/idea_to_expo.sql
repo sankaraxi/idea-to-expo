@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS `students` (
 CREATE TABLE IF NOT EXISTS `ideas` (
   `id`                 CHAR(36)      NOT NULL DEFAULT (UUID()),
   `student_id`         CHAR(36)      NOT NULL,
+  `problem_statement`  MEDIUMTEXT    NULL,
   `abstract`           MEDIUMTEXT    NULL,
   `ppt_url`            VARCHAR(2048) NULL,
   `other_details`      JSON          NOT NULL DEFAULT (JSON_OBJECT()),
