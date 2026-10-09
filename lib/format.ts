@@ -13,8 +13,3 @@ export function pageParam(value: string | string[] | undefined) {
 export function stringParam(value: string | string[] | undefined) {
   return typeof value === "string" ? value.trim() : "";
 }
-
-/** Escapes PostgREST ilike/or() special characters in user search text. */
-export function searchTerm(value: string) {
-  return value.replace(/[%,()*\\]/g, " ").trim().slice(0, 100);
-}

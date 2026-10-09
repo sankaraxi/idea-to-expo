@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { errorCodeOf, toFailure } from "@/lib/errors";
 import { DEFAULT_FORM_FIELD_MAPPING, firstUrl, normalizeSubmissions, parseTimestamp, resolveMapping } from "@/lib/forms/mapping";
 import { normalizeGender, parseStudentCsv } from "@/lib/forms/students-csv";
 import { pptEmbedUrl, safeExternalUrl } from "@/lib/ppt";
@@ -95,6 +94,7 @@ describe("problem statement form mapping", () => {
     "Phone Number",
     "Department",
     "Section",
+    "Problem Statement",
     "Abstract of the idea",
     "Your presentation (ppt/pdf's drive link)",
     "Email address",
@@ -105,7 +105,7 @@ describe("problem statement form mapping", () => {
   it("maps the problem statement questions, incl. long titles by prefix", () => {
     const { submissions, missingFields } = normalizeSubmissions(
       headers,
-      [["2026-10-01T10:00:00.000Z", "Asha", " 23ad 001 ", "98765", "AI&DS", "B", "Smart meters", "https://drive.google.com/open?id=abc", "ASHA@x.edu", "8", "40"]],
+      [["2026-10-01T10:00:00.000Z", "Asha", " 23ad 001 ", "98765", "AI&DS", "B", "No visibility of usage", "Smart meters", "https://drive.google.com/open?id=abc", "ASHA@x.edu", "8", "40"]],
       DEFAULT_FORM_FIELD_MAPPING,
       2,
       ["Innovation", "Total"],
@@ -116,6 +116,7 @@ describe("problem statement form mapping", () => {
       name: "Asha",
       email: "asha@x.edu",
       section: "B",
+      problem_statement: "No visibility of usage",
       abstract: "Smart meters",
       ppt_url: "https://drive.google.com/open?id=abc",
     });
@@ -172,16 +173,5 @@ describe("ppt embedding", () => {
   it("refuses non-http schemes", () => {
     expect(safeExternalUrl("javascript:alert(1)")).toBeNull();
     expect(pptEmbedUrl("data:text/html,hi")).toBeNull();
-  });
-});
-
-describe("error mapping", () => {
-  it("maps database error codes to friendly messages without leaking internals", () => {
-    expect(errorCodeOf({ message: "STUDENT_TAKEN", code: "P0001" })).toBe("STUDENT_TAKEN");
-    expect(toFailure({ message: "EVALUATOR_LIMIT_REACHED", details: "50" }, "t").message).toContain("maximum of 50");
-    expect(toFailure({ message: "SCORE_OUT_OF_RANGE", details: "Innovation" }, "t").message).toContain("Innovation");
-    const failure = toFailure({ message: "syntax error at or near SELECT" }, "test");
-    expect(failure).toMatchObject({ ok: false, code: "UNKNOWN" });
-    expect(failure.message).not.toContain("SELECT");
   });
 });

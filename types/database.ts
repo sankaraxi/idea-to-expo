@@ -1,12 +1,6 @@
-/**
- * Hand-maintained Supabase types mirroring supabase/migrations.
- * Regenerate with `npx supabase gen types typescript --linked > types/database.ts`
- * once a project is linked; keep the exported aliases at the bottom.
- */
+/** Row shapes returned by the MySQL queries in lib/services (mirrors database/idea_to_expo.sql). */
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
-
-type Insert<Row, Required extends keyof Row> = Pick<Row, Required> & Partial<Omit<Row, Required>>;
 
 export type EventStatus = "NOT_STARTED" | "LIVE" | "PAUSED" | "CLOSED";
 export type EvaluationStatus = "IN_PROGRESS" | "COMPLETED";
@@ -17,19 +11,20 @@ export type SyncStatus = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED" | "SUPE
 export type AppRole = "ADMIN" | "EVALUATOR";
 export type MatchedBy = "REGISTER_NUMBER" | "EMAIL" | "CREATED";
 
-export type ProfileRow = {
+export type UserRow = {
   id: string;
+  email: string;
   role: AppRole;
   full_name: string | null;
-  email: string | null;
+  is_active: boolean;
+  last_login_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type AppSettingsRow = {
-  id: boolean;
+  id: number;
   event_status: EventStatus;
-  max_evaluations_per_evaluator: number;
   allow_resubmission: boolean;
   tie_breakers: string[];
   form_field_mapping: Json;
@@ -59,6 +54,7 @@ export type StudentRow = {
 export type IdeaRow = {
   id: string;
   student_id: string;
+  problem_statement: string | null;
   abstract: string | null;
   ppt_url: string | null;
   other_details: Json;
@@ -78,7 +74,6 @@ export type EvaluatorRow = {
   employee_id: string | null;
   department: string | null;
   status: "ACTIVE" | "DISABLED";
-  max_evaluations: number;
   created_at: string;
   updated_at: string;
 };
@@ -120,9 +115,6 @@ export type EvaluationRow = {
   updated_at: string;
 };
 
-export type EvaluationScoreRow = { evaluation_id: string; criterion_id: string; score: number };
-export type EvaluationDomainRow = { evaluation_id: string; domain_id: string };
-
 export type AuditLogRow = {
   id: number;
   user_id: string | null;
@@ -133,12 +125,16 @@ export type AuditLogRow = {
   created_at: string;
 };
 
+export type AuditLogWithUser = AuditLogRow & {
+  user_name: string | null;
+  user_email: string | null;
+  user_role: AppRole | null;
+};
+
 export type SyncJobRow = {
   id: string;
   entity_type: SyncEntityType;
   entity_id: string;
-  operation: "UPSERT";
-  payload: Json;
   status: SyncStatus;
   attempts: number;
   last_error: string | null;
@@ -147,8 +143,6 @@ export type SyncJobRow = {
   created_at: string;
   processed_at: string | null;
 };
-
-export type SyncLockRow = { name: string; holder: string | null; lease_until: string };
 
 export type FormSyncRunRow = {
   id: string;
@@ -186,8 +180,6 @@ export type EvaluatorProgressRow = {
   employee_id: string | null;
   department: string | null;
   status: "ACTIVE" | "DISABLED";
-  max_evaluations: number;
-  evaluation_cap: number;
   claimed_count: number;
   completed_count: number;
   in_progress_count: number;
@@ -275,6 +267,7 @@ export type StudentForEvaluation = {
     email: string | null;
   };
   idea: {
+    problem_statement: string | null;
     abstract: string | null;
     ppt_url: string | null;
     other_details: Json;
@@ -302,7 +295,6 @@ export type DashboardStats = {
   ideas_incomplete: number;
   unmatched_submissions: number;
   total_evaluators: number;
-  evaluation_capacity: number;
   completed_evaluations: number;
   in_progress_evaluations: number;
   not_evaluated: number;
@@ -315,82 +307,4 @@ export type DashboardStats = {
   sync_failed: number;
   last_sync_at: string | null;
   last_form_sync_at: string | null;
-};
-
-type Table<Row, Required extends keyof Row> = {
-  Row: Row;
-  Insert: Insert<Row, Required>;
-  Update: Partial<Row>;
-  Relationships: [];
-};
-
-type View<Row> = { Row: Row; Relationships: [] };
-
-export type Database = {
-  public: {
-    Tables: {
-      profiles: Table<ProfileRow, "id" | "role">;
-      app_settings: Table<AppSettingsRow, never>;
-      students: Table<StudentRow, "register_number" | "name">;
-      ideas: Table<IdeaRow, "student_id">;
-      evaluators: Table<EvaluatorRow, "name" | "email">;
-      evaluation_criteria: Table<CriterionRow, "name" | "max_marks">;
-      domains: Table<DomainRow, "name">;
-      evaluations: Table<EvaluationRow, "student_id" | "evaluator_id">;
-      evaluation_scores: Table<EvaluationScoreRow, "evaluation_id" | "criterion_id" | "score">;
-      evaluation_domains: Table<EvaluationDomainRow, "evaluation_id" | "domain_id">;
-      audit_logs: Table<AuditLogRow, "action">;
-      sheet_sync_queue: Table<SyncJobRow, "entity_type" | "entity_id">;
-      sync_locks: Table<SyncLockRow, "name">;
-      form_sync_runs: Table<FormSyncRunRow, "source" | "status">;
-    };
-    Views: {
-      my_evaluations: View<MyEvaluationRow>;
-      evaluator_progress: View<EvaluatorProgressRow>;
-      student_overview: View<StudentOverviewRow>;
-      evaluation_overview: View<EvaluationOverviewRow>;
-      student_results: View<StudentResultRow>;
-    };
-    Functions: {
-      app_role: { Args: Record<string, never>; Returns: string | null };
-      is_admin: { Args: Record<string, never>; Returns: boolean };
-      current_evaluator_id: { Args: Record<string, never>; Returns: string | null };
-      search_students: { Args: { p_query: string; p_limit?: number }; Returns: SearchResultRow[] };
-      get_student_for_evaluation: { Args: { p_student_id: string }; Returns: Json };
-      save_evaluation_draft: {
-        Args: { p_student_id: string; p_scores: Json; p_remarks: string | null; p_domain_ids: string[] };
-        Returns: Json;
-      };
-      submit_evaluation: {
-        Args: { p_student_id: string; p_scores: Json; p_remarks: string | null; p_domain_ids: string[] };
-        Returns: Json;
-      };
-      release_my_evaluation: { Args: { p_student_id: string }; Returns: undefined };
-      admin_reopen_evaluation: { Args: { p_evaluation_id: string; p_reason: string }; Returns: undefined };
-      admin_release_evaluation: { Args: { p_evaluation_id: string; p_reason: string }; Returns: undefined };
-      set_event_status: { Args: { p_status: string }; Returns: undefined };
-      import_students: { Args: { p_rows: Json; p_actor?: string | null }; Returns: Json };
-      upsert_form_submissions: { Args: { p_rows: Json; p_source: string; p_actor?: string | null }; Returns: Json };
-      write_audit: {
-        Args: {
-          p_action: string;
-          p_entity_type?: string | null;
-          p_entity_id?: string | null;
-          p_metadata?: Json;
-          p_user_id?: string | null;
-        };
-        Returns: undefined;
-      };
-      acquire_sync_lock: { Args: { p_name: string; p_holder: string; p_ttl_seconds: number }; Returns: boolean };
-      release_sync_lock: { Args: { p_name: string; p_holder: string }; Returns: undefined };
-      claim_sync_jobs: { Args: { p_limit: number }; Returns: SyncJobRow[] };
-      complete_sync_jobs: { Args: { p_ids: string[] }; Returns: undefined };
-      fail_sync_jobs: { Args: { p_ids: string[]; p_error: string; p_max_attempts: number }; Returns: undefined };
-      retry_failed_sync_jobs: { Args: Record<string, never>; Returns: number };
-      enqueue_full_resync: { Args: Record<string, never>; Returns: number };
-      dashboard_stats: { Args: Record<string, never>; Returns: Json };
-    };
-    Enums: Record<string, never>;
-    CompositeTypes: Record<string, never>;
-  };
 };

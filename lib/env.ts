@@ -1,35 +1,30 @@
 import { z } from "zod";
 
 /**
- * Environment access. Public values are inlined by Next.js at build time and
- * must be referenced literally; server values are validated lazily so a
- * missing optional integration (Google) never breaks unrelated pages.
+ * Environment access. Values are validated lazily so a missing optional
+ * integration (Google) never breaks unrelated pages.
  */
 
-export const publicEnv = {
-  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-};
+const databaseSchema = z
+  .string()
+  .min(1, "DATABASE_URL is not set")
+  .refine((v) => /^mysql:\/\//i.test(v), "DATABASE_URL must start with mysql://");
 
-export function assertPublicEnv() {
-  if (!publicEnv.supabaseUrl || !publicEnv.supabaseAnonKey) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set");
+/** mysql://user:password@host:3306/idea_to_expo  (URL-encode special characters in the password). */
+export function databaseUrl(): string {
+  const parsed = databaseSchema.safeParse(process.env.DATABASE_URL ?? "");
+  if (!parsed.success) {
+    throw new Error(
+      `${parsed.error.issues[0]?.message}. Example: DATABASE_URL=mysql://root:password@127.0.0.1:3306/idea_to_expo`,
+    );
   }
-  return publicEnv;
+  return parsed.data;
 }
-
-const serverSchema = z.object({
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(20, "SUPABASE_SERVICE_ROLE_KEY is required"),
-});
 
 const googleSchema = z.object({
   GOOGLE_CLIENT_EMAIL: z.email(),
   GOOGLE_PRIVATE_KEY: z.string().min(100),
 });
-
-export function serverEnv() {
-  return serverSchema.parse(process.env);
-}
 
 export interface GoogleConfig {
   clientEmail: string;

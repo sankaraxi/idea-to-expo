@@ -19,7 +19,7 @@ export const TABS = {
   },
   EVALUATOR: {
     title: "Evaluators",
-    headers: ["Evaluator ID", "Evaluator Name", "Email", "Evaluated", "In Progress", "Limit", "Remaining", "Status", "Sync Key"],
+    headers: ["Evaluator ID", "Evaluator Name", "Email", "Evaluated", "In Progress", "Total Taken", "Status", "Sync Key"],
   },
   EVALUATION: {
     title: "Evaluations",
@@ -82,18 +82,15 @@ export function studentRecord(s: StudentOverviewRow): KeyedRecord {
 }
 
 export function evaluatorRecord(e: EvaluatorProgressRow): KeyedRecord {
-  const completed = Number(e.completed_count);
-  const claimed = Number(e.claimed_count);
   return {
     key: e.evaluator_id,
     values: [
       evaluatorDisplayId({ id: e.evaluator_id, employee_id: e.employee_id }),
       e.name,
       e.email,
-      completed,
+      Number(e.completed_count),
       Number(e.in_progress_count),
-      e.evaluation_cap,
-      Math.max(0, e.evaluation_cap - claimed),
+      Number(e.claimed_count),
       e.status,
     ],
   };
@@ -157,7 +154,6 @@ export function dashboardRows(stats: DashboardStats, now = new Date().toISOStrin
     ["Total Students", students],
     ["Ideas Submitted", stats.ideas_submitted],
     ["Evaluators", stats.total_evaluators],
-    ["Evaluation Capacity", stats.evaluation_capacity],
     ["Evaluated", completed],
     ["In Progress", stats.in_progress_evaluations],
     ["Not Evaluated", stats.not_evaluated],

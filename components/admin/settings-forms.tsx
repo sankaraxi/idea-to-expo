@@ -13,17 +13,14 @@ import { FORM_FIELDS, FORM_FIELD_LABELS, normalizeHeader, type FormFieldMapping 
 
 export function EvaluationSettingsForm({
   allowResubmission,
-  maxEvaluations,
   tieBreakers,
   options,
 }: {
   allowResubmission: boolean;
-  maxEvaluations: number;
   tieBreakers: string[];
   options: { id: string; label: string }[];
 }) {
   const [allow, setAllow] = useState(allowResubmission);
-  const [max, setMax] = useState(String(maxEvaluations));
   const [rules, setRules] = useState(tieBreakers.filter((t) => options.some((o) => o.id === t)));
   const [pending, start] = useTransition();
   const available = options.filter((o) => !rules.includes(o.id));
@@ -38,19 +35,13 @@ export function EvaluationSettingsForm({
 
   const save = () =>
     start(async () => {
-      const res = await saveSettings({ allowResubmission: allow, maxEvaluationsPerEvaluator: Number(max), tieBreakers: rules });
+      const res = await saveSettings({ allowResubmission: allow, tieBreakers: rules });
       if (res.ok) toast.success("Settings saved.");
       else toast.error(res.message);
     });
 
   return (
     <div className="space-y-6">
-      <div className="max-w-xs space-y-1.5">
-        <Label htmlFor="max-evals">Maximum students per evaluator</Label>
-        <Input id="max-evals" type="number" min={1} max={1000} value={max} onChange={(e) => setMax(e.target.value)} />
-        <p className="text-xs text-muted-foreground">Includes drafts. Individual evaluators can have a lower limit.</p>
-      </div>
-
       <label className="flex items-start gap-3">
         <Switch checked={allow} onCheckedChange={setAllow} className="mt-0.5" />
         <span>
@@ -164,8 +155,23 @@ export function SheetColumnsForm({
   criteria: { id: string; name: string; sheet_column: string | null; is_active: boolean }[];
   writeback: { totalHeader: string; evaluatorHeader: string; domainsHeader: string };
 }) {
-  const [cols, setCols] = useState<Record<string, string>>(Object.fromEntries(criteria.map((c) => [c.id, c.sheet_column ?? c.name])));
-  const [total, setTotal] = useState(writeback.totalHeader || (headers?.at(-1) ?? ""));
+  const has = (h: string) => !!headers?.some((x) => normalizeHeader(x) === normalizeHeader(h));
+  // Prefer the saved/explicit header; else the sheet's "criteria N" column for the N-th active criterion.
+  const initialColumn = (c: (typeof criteria)[number], activeIndex: number) => {
+    const explicit = c.sheet_column ?? c.name;
+    return headers && !has(explicit) && c.is_active && has(`criteria ${activeIndex + 1}`)
+      ? (headers.find((x) => normalizeHeader(x) === normalizeHeader(`criteria ${activeIndex + 1}`)) ?? explicit)
+      : explicit;
+  };
+  const [cols, setCols] = useState<Record<string, string>>(() => {
+    let active = -1;
+    return Object.fromEntries(criteria.map((c) => [c.id, initialColumn(c, c.is_active ? ++active : active)]));
+  });
+  const [total, setTotal] = useState(
+    writeback.totalHeader ||
+      headers?.find((x) => ["totalscore", "total"].includes(normalizeHeader(x))) ||
+      (headers?.at(-1) ?? ""),
+  );
   const [evaluator, setEvaluator] = useState(writeback.evaluatorHeader);
   const [domains, setDomains] = useState(writeback.domainsHeader);
   const [pending, start] = useTransition();

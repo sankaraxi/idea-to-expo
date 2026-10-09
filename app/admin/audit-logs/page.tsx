@@ -42,8 +42,7 @@ export default async function AuditLogsPage({ searchParams }: PageProps<"/admin/
   const sp = await searchParams;
   const action = ACTIONS.includes(stringParam(sp.action)) ? stringParam(sp.action) : "";
   const page = pageParam(sp.page);
-  const { rows, total, profiles } = await listAuditLogs({ action, page }, PAGE_SIZE);
-  const who = new Map(profiles.map((p) => [p.id, p]));
+  const { rows, total } = await listAuditLogs({ action, page }, PAGE_SIZE);
 
   return (
     <div>
@@ -77,15 +76,14 @@ export default async function AuditLogsPage({ searchParams }: PageProps<"/admin/
               </TableRow>
             )}
             {rows.map((r) => {
-              const user = r.user_id ? who.get(r.user_id) : null;
               return (
                 <TableRow key={r.id}>
                   <TableCell className="whitespace-nowrap">{formatDateTime(r.created_at)}</TableCell>
                   <TableCell>
-                    {user ? (
+                    {r.user_id ? (
                       <>
-                        <div className="font-medium">{user.full_name ?? user.email}</div>
-                        <div className="text-xs text-muted-foreground">{user.role.toLowerCase()}</div>
+                        <div className="font-medium">{r.user_name ?? r.user_email}</div>
+                        <div className="text-xs text-muted-foreground">{r.user_role?.toLowerCase()}</div>
                       </>
                     ) : (
                       <span className="text-muted-foreground">system</span>

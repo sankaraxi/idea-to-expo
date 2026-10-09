@@ -48,7 +48,6 @@ export default async function SettingsPage() {
         <CardContent>
           <EvaluationSettingsForm
             allowResubmission={settings.allow_resubmission}
-            maxEvaluations={settings.max_evaluations_per_evaluator}
             tieBreakers={settings.tie_breakers}
             options={tieBreakerOptions(criteria.filter((c) => c.is_active))}
           />

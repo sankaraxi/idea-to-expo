@@ -12,18 +12,18 @@
     "test:unit": "vitest run tests/unit",
     "test:db": "vitest run tests/db",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "db:seed": "node --env-file=.env.local scripts/seed.mjs --evaluate",
-    "admin:create": "node --env-file=.env.local scripts/create-admin.mjs"
+    "db:seed": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env.local scripts/seed.mjs --evaluate",
+    "admin:create": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env.local scripts/create-admin.mjs",
+    "db:import": "mysql -u root -p < database/idea_to_expo.sql"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@hookform/resolvers": "^5.9.1",
-    "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.117.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
     "google-auth-library": "^11.2.0",
     "lucide-react": "^1.53.0",
+    "mysql2": "^3.24.5",
     "next": "16.4.0",
     "next-themes": "^0.4.6",
     "papaparse": "^5.7.0",
@@ -38,7 +38,6 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^22.20.5",
     "@types/papaparse": "^5.5.2",

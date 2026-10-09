@@ -1,11 +1,28 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { pool, rowsIn } from "@/lib/db/sql";
 import { googleConfig } from "@/lib/env";
 import { resolveMapping } from "@/lib/forms/mapping";
 import { rankStudents } from "@/lib/results/ranking";
-import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
-import { fetchAllPages } from "@/lib/supabase/paginate";
-import type { DashboardStats, SyncEntityType, SyncJobRow } from "@/types/database";
+import { audit } from "@/lib/services/audit";
+import { listCriteria } from "@/lib/services/criteria";
+import { listEvaluatorProgress } from "@/lib/services/evaluators";
+import {
+  getCompletedEvaluationsByStudentIds,
+  getDashboardStats,
+  getEvaluationOverviewsByIds,
+  getStudentOverviewsByIds,
+  loadResultRows,
+} from "@/lib/services/reports";
+import { getSettingsRow } from "@/lib/services/settings";
+import {
+  acquireSyncLock,
+  claimSyncJobs,
+  completeSyncJobs,
+  failSyncJobs,
+  releaseSyncLock,
+} from "@/lib/services/sync-queue";
+import type { SyncEntityType, SyncJobRow } from "@/types/database";
 import { GoogleSheetsApi, type SheetsApi } from "./api";
 import { columnLetter, ensureTabs, replaceTable, upsertKeyedRows } from "./engine";
 import {
@@ -61,62 +78,54 @@ export function createSyncTargets(): SyncTargets {
  * Drains the sync queue into Google Sheets. Safe to call concurrently from
  * after() hooks, cron and the admin page: only the lease holder works.
  */
-export async function processSyncQueue(
-  options: { timeBudgetMs?: number; targets?: SyncTargets; db?: AdminClient } = {},
-): Promise<SyncRunReport> {
+export async function processSyncQueue(options: { timeBudgetMs?: number; targets?: SyncTargets } = {}): Promise<SyncRunReport> {
   const targets = options.targets ?? createSyncTargets();
   const report: SyncRunReport = { status: "idle", processed: 0, failed: 0, batches: 0, errors: [] };
   if (!targets.reporting && !targets.responses) return { ...report, status: "disabled" };
 
-  const db = options.db ?? createAdminClient();
   const holder = randomUUID();
   const deadline = Date.now() + (options.timeBudgetMs ?? 45_000);
 
-  const lock = await db.rpc("acquire_sync_lock", { p_name: LOCK_NAME, p_holder: holder, p_ttl_seconds: LOCK_TTL_SECONDS });
-  if (lock.error) return { ...report, status: "error", errors: [lock.error.message] };
-  if (!lock.data) return { ...report, status: "locked" };
+  if (!(await acquireSyncLock(LOCK_NAME, holder, LOCK_TTL_SECONDS))) return { ...report, status: "locked" };
 
   try {
     let tabsReady = false;
     while (Date.now() < deadline) {
-      const { data: jobs, error } = await db.rpc("claim_sync_jobs", { p_limit: BATCH_SIZE });
-      if (error) throw new Error(`claim_sync_jobs: ${error.message}`);
-      if (!jobs || jobs.length === 0) break;
+      const jobs = await claimSyncJobs(BATCH_SIZE);
+      if (jobs.length === 0) break;
       report.batches++;
 
       for (const [type, group] of groupByType(jobs)) {
         try {
           if (type === "RESPONSE_ROW") {
-            if (targets.responses) await writeResponseRows(db, targets.responses, group);
+            if (targets.responses) await writeResponseRows(targets.responses, group);
           } else if (targets.reporting) {
             if (!tabsReady) {
               await ensureTabs(targets.reporting, ALL_TABS);
               tabsReady = true;
             }
-            await syncReportingType(db, targets.reporting, type, group);
+            await syncReportingType(targets.reporting, type, group);
           }
-          const { error: doneError } = await db.rpc("complete_sync_jobs", { p_ids: group.map((j) => j.id) });
-          if (doneError) throw new Error(doneError.message);
+          await completeSyncJobs(group.map((j) => j.id));
           report.processed += group.length;
         } catch (e) {
-          await failJobs(db, group, e);
+          await failSyncJobs(group.map((j) => j.id), message(e), MAX_ATTEMPTS);
           report.failed += group.length;
           report.errors.push(`${type}: ${message(e)}`);
         }
       }
-      await db.rpc("acquire_sync_lock", { p_name: LOCK_NAME, p_holder: holder, p_ttl_seconds: LOCK_TTL_SECONDS });
+      await acquireSyncLock(LOCK_NAME, holder, LOCK_TTL_SECONDS); // renew the lease
     }
   } catch (e) {
     report.errors.push(message(e));
     report.status = "error";
   } finally {
-    await db.rpc("release_sync_lock", { p_name: LOCK_NAME, p_holder: holder });
+    await releaseSyncLock(LOCK_NAME, holder);
   }
 
   if (report.failed > 0) {
-    await db.from("audit_logs").insert({
-      action: "GOOGLE_SHEET_SYNC_FAILURE",
-      entity_type: "sheet_sync_queue",
+    await audit("GOOGLE_SHEET_SYNC_FAILURE", {
+      entityType: "sheet_sync_queue",
       metadata: { failed: report.failed, errors: report.errors.slice(0, 5) },
     });
   }
@@ -126,15 +135,6 @@ export async function processSyncQueue(
 
 function message(e: unknown) {
   return e instanceof Error ? e.message : String(e);
-}
-
-async function failJobs(db: AdminClient, jobs: SyncJobRow[], error: unknown) {
-  const { error: rpcError } = await db.rpc("fail_sync_jobs", {
-    p_ids: jobs.map((j) => j.id),
-    p_error: message(error),
-    p_max_attempts: MAX_ATTEMPTS,
-  });
-  if (rpcError) console.error("[sheets] fail_sync_jobs", rpcError.message);
 }
 
 function groupByType(jobs: SyncJobRow[]) {
@@ -149,59 +149,29 @@ function groupByType(jobs: SyncJobRow[]) {
 
 const unique = (ids: (string | null | undefined)[]) => [...new Set(ids.filter((v): v is string => !!v))];
 
-async function fetchIn<T>(
-  ids: string[],
-  query: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-): Promise<T[]> {
-  const out: T[] = [];
-  for (let i = 0; i < ids.length; i += 150) {
-    const { data, error } = await query(ids.slice(i, i + 150));
-    if (error) throw new Error(error.message);
-    out.push(...(data ?? []));
-  }
-  return out;
-}
-
-async function loadCriteria(db: AdminClient) {
-  const { data, error } = await db
-    .from("evaluation_criteria")
-    .select("id, name, max_marks, sheet_column, is_active, sort_order")
-    .order("sort_order")
-    .order("name");
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-async function syncReportingType(db: AdminClient, api: SheetsApi, type: SyncEntityType, jobs: SyncJobRow[]) {
+async function syncReportingType(api: SheetsApi, type: SyncEntityType, jobs: SyncJobRow[]) {
   const ids = unique(jobs.map((j) => j.entity_id));
   switch (type) {
     case "STUDENT": {
-      const rows = await fetchIn(ids, (c) => db.from("student_overview").select("*").in("id", c));
-      await upsertKeyedRows(api, TABS.STUDENT, rows.map(studentRecord));
+      await upsertKeyedRows(api, TABS.STUDENT, (await getStudentOverviewsByIds(ids)).map(studentRecord));
       return;
     }
     case "EVALUATOR": {
-      const rows = await fetchIn(ids, (c) => db.from("evaluator_progress").select("*").in("evaluator_id", c));
-      await upsertKeyedRows(api, TABS.EVALUATOR, rows.map(evaluatorRecord));
+      await upsertKeyedRows(api, TABS.EVALUATOR, (await listEvaluatorProgress(ids)).map(evaluatorRecord));
       return;
     }
     case "EVALUATION": {
-      const [rows, criteria] = await Promise.all([
-        fetchIn(ids, (c) => db.from("evaluation_overview").select("*").in("evaluation_id", c)),
-        loadCriteria(db),
-      ]);
-      const found = new Set(rows.map((r) => r.evaluation_id));
+      const [found, criteria] = await Promise.all([getEvaluationOverviewsByIds(ids), listCriteria()]);
+      const seen = new Set(found.map((r) => r.evaluation_id));
       await upsertKeyedRows(api, TABS.EVALUATION, [
-        ...rows.map((r) => evaluationRecord(r, criteria)),
-        ...ids.filter((id) => !found.has(id)).map(releasedEvaluationRecord),
+        ...found.map((r) => evaluationRecord(r, criteria)),
+        ...ids.filter((id) => !seen.has(id)).map(releasedEvaluationRecord), // evaluation was released/deleted
       ]);
       return;
     }
     case "RESULTS": {
-      await replaceTable(api, TABS.RESULTS, resultRows(await loadRankedResults(db)));
-      const { data: stats, error } = await db.rpc("dashboard_stats");
-      if (error) throw new Error(error.message);
-      await replaceTable(api, TABS.DASHBOARD, dashboardRows(stats as unknown as DashboardStats));
+      await replaceTable(api, TABS.RESULTS, resultRows(await loadRankedResults()));
+      await replaceTable(api, TABS.DASHBOARD, dashboardRows(await getDashboardStats()));
       return;
     }
     default:
@@ -210,14 +180,9 @@ async function syncReportingType(db: AdminClient, api: SheetsApi, type: SyncEnti
 }
 
 /** Writes criterion scores / total (and optional evaluator, domains) into the response sheet. */
-async function writeResponseRows(db: AdminClient, target: NonNullable<SyncTargets["responses"]>, jobs: SyncJobRow[]) {
+async function writeResponseRows(target: NonNullable<SyncTargets["responses"]>, jobs: SyncJobRow[]) {
   const tab = `'${target.tab.replace(/'/g, "''")}'`;
-  const [{ data: settings, error: settingsError }, criteria, headerValues] = await Promise.all([
-    db.from("app_settings").select("form_field_mapping, sheet_writeback").single(),
-    loadCriteria(db),
-    target.api.getValues(`${tab}!1:1`),
-  ]);
-  if (settingsError) throw new Error(settingsError.message);
+  const [settings, criteria, headerValues] = await Promise.all([getSettingsRow(), listCriteria(), target.api.getValues(`${tab}!1:1`)]);
 
   const headers = (headerValues[0] ?? []).map((h) => String(h ?? ""));
   const layout = resolveLayout(headers, resolveMapping(settings.form_field_mapping), criteria, resolveWritebackSettings(settings.sheet_writeback));
@@ -237,8 +202,8 @@ async function writeResponseRows(db: AdminClient, target: NonNullable<SyncTarget
 
   const studentIds = unique(jobs.map((j) => j.entity_id));
   const [students, evaluations] = await Promise.all([
-    fetchIn(studentIds, (c) => db.from("students").select("id, register_number, email").in("id", c)),
-    fetchIn(studentIds, (c) => db.from("evaluation_overview").select("*").in("student_id", c).eq("status", "COMPLETED")),
+    rowsIn<{ id: string; register_number: string; email: string | null }>(pool(), studentIds, (ph) => `SELECT id, register_number, email FROM students WHERE id IN ${ph}`),
+    getCompletedEvaluationsByStudentIds(studentIds),
   ]);
   const evalByStudent = new Map(evaluations.map((e) => [e.student_id, e]));
 
@@ -256,12 +221,8 @@ async function writeResponseRows(db: AdminClient, target: NonNullable<SyncTarget
   for (let i = 0; i < updates.length; i += 500) await target.api.batchUpdate(updates.slice(i, i + 500));
 }
 
-export async function loadRankedResults(db: AdminClient) {
-  const [{ data: settings, error }, rows] = await Promise.all([
-    db.from("app_settings").select("tie_breakers").single(),
-    fetchAllPages((from, to) => db.from("student_results").select("*").order("register_number").range(from, to)),
-  ]);
-  if (error) throw new Error(error.message);
+export async function loadRankedResults() {
+  const [settings, rows] = await Promise.all([getSettingsRow(), loadResultRows()]);
   return rankStudents(
     rows
       .filter((r) => r.status === "ACTIVE")
@@ -280,3 +241,4 @@ export async function loadRankedResults(db: AdminClient) {
     settings.tie_breakers,
   );
 }
+

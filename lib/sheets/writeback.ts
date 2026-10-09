@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FORM_FIELDS, matchHeaders, normalizeHeader, normalizeRegisterNumber, type FormFieldMapping } from "@/lib/forms/mapping";
+import { FORM_FIELDS, isScoreColumnHeader, matchHeaders, normalizeHeader, normalizeRegisterNumber, type FormFieldMapping } from "@/lib/forms/mapping";
 import type { CellValue } from "./api";
 import { columnLetter } from "./engine";
 
@@ -33,6 +33,8 @@ export interface CriterionColumn {
   id: string;
   name: string;
   sheet_column: string | null;
+  /** Inactive criteria are not scored, so they do not take a positional "criteria N" column. */
+  is_active?: boolean;
 }
 
 export const criterionHeader = (c: Pick<CriterionColumn, "name" | "sheet_column">) => (c.sheet_column?.trim() || c.name).trim();
@@ -73,6 +75,7 @@ export function resolveLayout(
   };
 
   const owned = new Set(portalOwnedHeaders(criteria, settings).map(normalizeHeader));
+  normalized.forEach((h) => isScoreColumnHeader(h) && owned.add(h));
   const { fieldByIndex } = matchHeaders(headers, mapping.fields, FORM_FIELDS, owned);
   let registerCol: number | null = null;
   let emailCol: number | null = null;
@@ -84,12 +87,15 @@ export function resolveLayout(
   const missing: string[] = [];
   if (registerCol === null && emailCol === null) missing.push("Register number / email column");
   const criterionCols = new Map<string, number>();
+  let position = 0; // the k-th active criterion falls back to a header named "criteria k"
   for (const c of criteria) {
-    const col = find(criterionHeader(c));
+    if (c.is_active !== false) position++;
+    const col = find(criterionHeader(c)) ?? (c.is_active !== false ? find(`criteria ${position}`) : null);
     if (col === null) missing.push(`Criterion column “${criterionHeader(c)}”`);
     else criterionCols.set(c.id, col);
   }
-  const totalCol = find(settings.totalHeader);
+  // Total: the configured header, else a column called "total score" / "total".
+  const totalCol = find(settings.totalHeader) ?? find("total score") ?? find("total");
   if (totalCol === null) missing.push(settings.totalHeader ? `Total column “${settings.totalHeader}”` : "Total column (not set)");
   const evaluatorCol = find(settings.evaluatorHeader);
   if (settings.evaluatorHeader && evaluatorCol === null) missing.push(`Evaluator column “${settings.evaluatorHeader}”`);

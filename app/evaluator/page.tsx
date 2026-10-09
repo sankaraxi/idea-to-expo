@@ -7,7 +7,7 @@ import { PageHeader, ProgressBar, StatCard } from "@/components/shared/ui-bits";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireEvaluatorPage } from "@/lib/auth/session";
-import { getMyEvaluations, getMyQuota } from "@/lib/data/evaluator";
+import { getMyEvaluations, getMyStats } from "@/lib/data/evaluator";
 import { getSettings } from "@/lib/data/settings";
 import { formatDateTime } from "@/lib/format";
 
@@ -22,7 +22,7 @@ function greeting() {
 
 export default async function EvaluatorDashboard() {
   const user = await requireEvaluatorPage();
-  const [rows, quota, settings] = await Promise.all([getMyEvaluations(), getMyQuota(user.evaluatorId), getSettings()]);
+  const [rows, stats, settings] = await Promise.all([getMyEvaluations(user.evaluatorId), getMyStats(user.evaluatorId), getSettings()]);
   const drafts = rows.filter((r) => r.status === "IN_PROGRESS");
   const recent = rows.filter((r) => r.status === "COMPLETED").slice(0, 5);
 
@@ -37,32 +37,27 @@ export default async function EvaluatorDashboard() {
       )}
 
       <Card>
-        <CardContent className="space-y-3">
+        <CardContent>
           <StudentSearch autoFocus />
-          {quota.remaining === 0 && (
-            <p className="text-sm text-destructive">
-              You have reached your limit of {quota.cap} evaluations. You can still finish your drafts.
-            </p>
-          )}
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Evaluated" value={quota.completed} tone="success" />
-        <StatCard label="Drafts" value={quota.inProgress} tone={quota.inProgress ? "warning" : undefined} />
-        <StatCard label="Limit" value={quota.cap} />
-        <StatCard label="Remaining" value={quota.remaining} />
+        <StatCard label="Evaluated by you" value={stats.completed} tone="success" />
+        <StatCard label="Your drafts" value={stats.inProgress} tone={stats.inProgress ? "warning" : undefined} />
+        <StatCard label="Students not yet taken" value={stats.unclaimedStudents} />
+        <StatCard label="Event progress" value={`${stats.eventPercent}%`} hint={`${stats.eventCompleted} of ${stats.eventTotal} students`} />
       </div>
 
       <Card>
         <CardContent className="space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="font-medium">Progress</span>
+            <span className="font-medium">Whole event</span>
             <span className="tabular-nums text-muted-foreground">
-              {quota.completed} / {quota.cap}
+              {stats.eventCompleted} / {stats.eventTotal}
             </span>
           </div>
-          <ProgressBar value={quota.percent} />
+          <ProgressBar value={stats.eventPercent} />
         </CardContent>
       </Card>
 

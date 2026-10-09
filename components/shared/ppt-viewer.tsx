@@ -46,11 +46,12 @@ export function PptViewer({ url, embedUrl }: { url: string | null; embedUrl: str
               allow="autoplay; fullscreen"
               allowFullScreen
               referrerPolicy="no-referrer"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+              // The built-in PDF viewer doesn't run inside a sandboxed frame; our own route is trusted.
+              sandbox={embedUrl.startsWith("/") ? undefined : "allow-scripts allow-same-origin allow-popups allow-presentation"}
             />
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Preview not loading? The file may not be shared publicly — use “Open PPT”.
+            Preview not loading? Make sure the file is shared with the service account — or use “Open PPT”.
           </p>
         </CardContent>
       ) : (

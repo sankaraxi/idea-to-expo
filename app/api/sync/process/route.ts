@@ -6,8 +6,8 @@ import { processSyncQueue } from "@/lib/sheets/worker";
 export const maxDuration = 60;
 
 /**
- * Sheet sync worker endpoint for schedulers (Vercel Cron, Supabase pg_cron +
- * pg_net, or any uptime pinger). Requires `Authorization: Bearer $CRON_SECRET`.
+ * Sheet sync worker endpoint for schedulers (Vercel Cron, Windows Task Scheduler,
+ * cron + curl, or any uptime pinger). Requires `Authorization: Bearer $CRON_SECRET`.
  */
 async function handle(request: NextRequest) {
   const expected = secret("CRON_SECRET");

@@ -3,10 +3,12 @@ import { PptViewer } from "@/components/shared/ppt-viewer";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/format";
+import { driveFileId } from "@/lib/drive/ppt-pdf";
 import { pptEmbedUrl, safeExternalUrl } from "@/lib/ppt";
 import type { Json } from "@/types/database";
 
 interface Idea {
+  problem_statement: string | null;
   abstract: string | null;
   ppt_url: string | null;
   other_details: Json;
@@ -35,16 +37,22 @@ export function SubmissionDetails({ idea }: { idea: Idea | null }) {
     <div className="space-y-5">
       <Card>
         <CardHeader>
-          <CardTitle>Abstract of the idea</CardTitle>
+          <CardTitle>Problem statement</CardTitle>
           <CardAction className="flex items-center gap-2">
             {idea.submission_status !== "SUBMITTED" && <StatusBadge status={idea.submission_status} />}
             {idea.submitted_at && <span className="text-xs text-muted-foreground">{formatDateTime(idea.submitted_at)}</span>}
           </CardAction>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           <p className="text-sm leading-relaxed whitespace-pre-wrap">
-            {idea.abstract || <span className="text-muted-foreground">No abstract provided.</span>}
+            {idea.problem_statement || <span className="text-muted-foreground">No problem statement provided.</span>}
           </p>
+          <div>
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Abstract of the idea</h3>
+            <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">
+              {idea.abstract || <span className="text-muted-foreground">No abstract provided.</span>}
+            </p>
+          </div>
           {other.length > 0 && (
             <div>
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Other details</h3>
@@ -60,7 +68,7 @@ export function SubmissionDetails({ idea }: { idea: Idea | null }) {
           )}
         </CardContent>
       </Card>
-      <PptViewer url={safeExternalUrl(idea.ppt_url)} embedUrl={pptEmbedUrl(idea.ppt_url)} />
+      <PptViewer url={safeExternalUrl(idea.ppt_url)} embedUrl={driveFileId(idea.ppt_url ?? "") ? `/api/ppt?url=${encodeURIComponent(idea.ppt_url!)}` : pptEmbedUrl(idea.ppt_url)} />
     </div>
   );
 }

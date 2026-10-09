@@ -1,7 +1,7 @@
 /**
- * Centralised error handling. Database functions raise stable codes as the
- * exception message; everything user-facing goes through `toUserMessage` so
- * internals (SQL, stack traces) never reach the browser.
+ * Centralised error handling. Services throw AppError with a stable code;
+ * everything user-facing goes through `toFailure` so internals (SQL, stack
+ * traces) never reach the browser.
  */
 
 export const ERROR_MESSAGES = {
@@ -16,7 +16,6 @@ export const ERROR_MESSAGES = {
   REMARKS_TOO_LONG: "Remarks must be 5000 characters or fewer.",
   STUDENT_NOT_FOUND: "Student not found.",
   STUDENT_TAKEN: "This student is already being evaluated by another evaluator.",
-  EVALUATOR_LIMIT_REACHED: "You have reached your maximum number of evaluations.",
   ALREADY_SUBMITTED: "This evaluation has already been submitted and can no longer be changed.",
   FORBIDDEN: "You do not have permission to do that.",
   REASON_REQUIRED: "Please give a reason.",
@@ -28,6 +27,7 @@ export const ERROR_MESSAGES = {
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
   RATE_LIMITED: "Too many attempts. Please wait a moment and try again.",
   VALIDATION: "Some fields are invalid. Please check and try again.",
+  DB_UNAVAILABLE: "The database is not reachable right now. Your draft is saved on this device — please try again in a moment.",
   NETWORK: "Could not reach the server. Check your connection and try again.",
   UNKNOWN: "Something went wrong. Please try again.",
 } as const;
@@ -58,38 +58,36 @@ export function fail(code: ErrorCode, message?: string, fieldErrors?: Record<str
   return { ok: false as const, code, message: message ?? ERROR_MESSAGES[code], fieldErrors };
 }
 
-function isErrorCode(value: string): value is ErrorCode {
-  return Object.hasOwn(ERROR_MESSAGES, value);
+const CONNECTION_ERRORS = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "PROTOCOL_CONNECTION_LOST",
+  "ER_CON_COUNT_ERROR",
+  "ER_SERVER_SHUTDOWN",
+  "ER_ACCESS_DENIED_ERROR",
+  "ER_BAD_DB_ERROR",
+]);
+
+/** True for failures to reach/log into the database (as opposed to a bad query or data). */
+export function isDatabaseUnavailable(error: unknown): boolean {
+  const code = error && typeof error === "object" ? (error as { code?: string }).code : undefined;
+  if (code && CONNECTION_ERRORS.has(code)) return true;
+  // mysql2 wraps pool failures in an AggregateError for multi-address hosts (e.g. localhost).
+  if (error instanceof AggregateError) return error.errors.some(isDatabaseUnavailable);
+  return false;
 }
 
-/** Extracts a known code from a Supabase/PostgREST/Postgres error, if any. */
 export function errorCodeOf(error: unknown): ErrorCode | null {
   if (error instanceof AppError) return error.code;
-  if (error && typeof error === "object") {
-    const message = "message" in error ? String((error as { message: unknown }).message) : "";
-    const head = message.split(/[\s:]/)[0];
-    if (isErrorCode(head)) return head;
-    const pgCode = "code" in error ? String((error as { code: unknown }).code) : "";
-    if (pgCode === "42501") return "FORBIDDEN";
-    if (pgCode === "PGRST301" || pgCode === "401") return "UNAUTHENTICATED";
-    if (/fetch failed|network|ECONNREFUSED|ETIMEDOUT/i.test(message)) return "NETWORK";
-  }
+  if (isDatabaseUnavailable(error)) return "DB_UNAVAILABLE";
   return null;
 }
 
 /** Converts any thrown value into a safe ActionResult failure, logging the internals server-side. */
 export function toFailure(error: unknown, context: string) {
-  const code = errorCodeOf(error);
-  if (!code || code === "UNKNOWN" || code === "NETWORK") {
-    console.error(`[${context}]`, error);
-  }
-  const detail =
-    error && typeof error === "object" && "details" in error ? String((error as { details: unknown }).details ?? "") : "";
-  if (code === "EVALUATOR_LIMIT_REACHED" && detail) {
-    return fail(code, `You have reached your maximum of ${detail} evaluations.`);
-  }
-  if (code === "SCORE_OUT_OF_RANGE" && detail) {
-    return fail(code, `The score for “${detail}” is above its maximum.`);
-  }
-  return fail(code ?? "UNKNOWN");
+  if (error instanceof AppError) return fail(error.code, error.message);
+  console.error(`[${context}]`, error);
+  return fail(isDatabaseUnavailable(error) ? "DB_UNAVAILABLE" : "UNKNOWN");
 }

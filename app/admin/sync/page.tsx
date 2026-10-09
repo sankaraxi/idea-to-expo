@@ -33,7 +33,7 @@ export default async function SyncPage() {
     <div className="space-y-5">
       <PageHeader
         title="Google Sheets Sync"
-        description="Supabase is the source of truth; the Google Sheet is updated continuously from a retrying queue."
+        description="The database is the source of truth; Google Sheets is updated continuously from a retrying queue."
         actions={<AutoRefresh intervalMs={10_000} />}
       />
 

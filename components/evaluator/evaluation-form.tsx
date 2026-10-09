@@ -34,7 +34,6 @@ interface Props {
   domains: DomainRow[];
   eventStatus: EventStatus;
   allowResubmission: boolean;
-  remainingQuota: number;
   initial: (DraftValues & { status: EvaluationStatus; updatedAt: string }) | null;
 }
 
@@ -78,11 +77,9 @@ export function EvaluationForm(props: Props) {
   const total = criteria.reduce((sum, c) => sum + (values.scores[c.id] ?? 0), 0);
   const maxTotal = criteria.reduce((sum, c) => sum + c.max_marks, 0);
   const scoredAll = criteria.length > 0 && criteria.every((c) => values.scores[c.id] !== undefined);
-  const quotaBlocked = !claimed && props.remainingQuota <= 0;
-
-  const canDraft = (eventStatus === "LIVE" || eventStatus === "PAUSED") && !completed && !quotaBlocked;
-  const canSubmit = eventStatus === "LIVE" && !quotaBlocked && (!completed || (allowResubmission && editing));
-  const readOnly = (completed && !editing) || quotaBlocked || (!canDraft && !canSubmit);
+  const canDraft = (eventStatus === "LIVE" || eventStatus === "PAUSED") && !completed;
+  const canSubmit = eventStatus === "LIVE" && (!completed || (allowResubmission && editing));
+  const readOnly = (completed && !editing) || (!canDraft && !canSubmit);
 
   // Recover a newer local draft (refresh / crash / offline) once on mount.
   useEffect(() => {
@@ -119,7 +116,7 @@ export function EvaluationForm(props: Props) {
       const changed = latest.current !== snapshot;
       setSave(changed ? { kind: "dirty" } : { kind: "saved", at: new Date() });
       if (changed) schedule();
-    } else if (result && (result.code === "STUDENT_TAKEN" || result.code === "EVALUATOR_LIMIT_REACHED" || result.code === "ALREADY_SUBMITTED")) {
+    } else if (result && (result.code === "STUDENT_TAKEN" || result.code === "ALREADY_SUBMITTED")) {
       setSave({ kind: "idle" });
       setError(result.message);
       router.refresh();
@@ -259,12 +256,7 @@ export function EvaluationForm(props: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        {quotaBlocked && (
-          <Alert variant="destructive">
-            <AlertDescription>You have reached your evaluation limit, so you cannot take another student.</AlertDescription>
-          </Alert>
-        )}
-        {!claimed && !quotaBlocked && canDraft && (
+        {!claimed && canDraft && (
           <Alert>
             <AlertDescription>Your first score reserves this student for you — no other evaluator can then take them.</AlertDescription>
           </Alert>
