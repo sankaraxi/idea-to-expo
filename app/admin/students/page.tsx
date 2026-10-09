@@ -85,6 +85,7 @@ export default async function StudentsPage({ searchParams }: PageProps<"/admin/s
               <TableHead className="hidden md:table-cell">Department</TableHead>
               <TableHead>Submission</TableHead>
               <TableHead>Evaluation</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="hidden lg:table-cell">Evaluator</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">PPT</TableHead>
@@ -93,7 +94,7 @@ export default async function StudentsPage({ searchParams }: PageProps<"/admin/s
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                   No students match these filters.
                 </TableCell>
               </TableRow>
@@ -125,6 +126,7 @@ export default async function StudentsPage({ searchParams }: PageProps<"/admin/s
                   <TableCell>
                     <StatusBadge status={s.evaluation_status} />
                   </TableCell>
+                  <TableCell>{s.decision ? <StatusBadge status={s.decision} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="hidden text-sm lg:table-cell">{s.evaluator_name ?? "—"}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
                     {s.evaluation_status === "COMPLETED" ? (

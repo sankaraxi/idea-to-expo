@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { releaseMyEvaluation, saveDraft, submitEvaluation } from "@/lib/actions/evaluation";
+import { DECISIONS, DECISION_LABELS, DECISION_STYLES, type Decision } from "@/lib/decision";
 import { chooseInitialDraft, draftKey, parseLocalDraft, pruneDraft, type DraftValues } from "@/lib/evaluations/draft";
 import { cn } from "@/lib/utils";
 import type { ClaimStatus, CriterionRow, DomainRow, EvaluationStatus, EventStatus } from "@/types/database";
@@ -61,7 +62,7 @@ export function EvaluationForm(props: Props) {
   const { studentId, studentName, criteria, domains, eventStatus, allowResubmission, initial } = props;
   const router = useRouter();
   const key = draftKey(studentId);
-  const empty: DraftValues = { scores: {}, remarks: "", domainIds: [] };
+  const empty: DraftValues = { scores: {}, remarks: "", domainIds: [], decision: null };
   const [values, setValues] = useState<DraftValues>(initial ? pruneDraft(initial, criteria, domains.map((d) => d.id)) : empty);
   const [completed, setCompleted] = useState(initial?.status === "COMPLETED");
   const [claimed, setClaimed] = useState(props.claimStatus !== "AVAILABLE");
@@ -192,6 +193,10 @@ export function EvaluationForm(props: Props) {
       setError("Score every criterion before submitting.");
       return;
     }
+    if (!latest.current.decision) {
+      setError("Choose a status (Selected, Waitlisted or Rejected) before submitting.");
+      return;
+    }
     if (timer.current) window.clearTimeout(timer.current);
     startSubmit(async () => {
       const result = await submitEvaluation({ studentId, ...latest.current }).catch(() => null);
@@ -309,6 +314,33 @@ export function EvaluationForm(props: Props) {
             <span className="text-sm font-normal text-muted-foreground"> / {maxTotal}</span>
           </span>
         </div>
+
+        <fieldset className="space-y-2" disabled={readOnly}>
+          <legend className="text-sm font-medium">
+            Status <span className="font-normal text-muted-foreground">(required to submit)</span>
+          </legend>
+          <div role="radiogroup" aria-label="Status" className="grid grid-cols-3 gap-2">
+            {DECISIONS.map((d: Decision) => {
+              const chosen = values.decision === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  role="radio"
+                  aria-checked={chosen}
+                  disabled={readOnly}
+                  onClick={() => update({ decision: chosen ? null : d })}
+                  className={cn(
+                    "h-10 rounded-lg border text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                    chosen ? DECISION_STYLES[d].selected : cn("bg-background", DECISION_STYLES[d].idle),
+                  )}
+                >
+                  {DECISION_LABELS[d]}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
 
         {domains.length > 0 && (
           <fieldset className="space-y-2" disabled={readOnly}>

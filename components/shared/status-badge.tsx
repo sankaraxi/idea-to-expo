@@ -31,6 +31,10 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   UNASSIGNED: "danger",
   NOT_EVALUATED: "neutral",
   NOT_IN_CSV: "warning",
+  SELECTED: "success",
+  WAITLISTED: "warning",
+  REJECTED: "danger",
+  NOT_SET: "neutral",
 };
 
 const LABELS: Record<string, string> = {
@@ -40,6 +44,7 @@ const LABELS: Record<string, string> = {
   COMPLETED: "Evaluated",
   NOT_IN_CSV: "Not in CSV",
   MISSING: "No submission",
+  NOT_SET: "Not set",
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {

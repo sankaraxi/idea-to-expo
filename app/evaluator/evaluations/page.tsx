@@ -36,6 +36,7 @@ export default async function MyEvaluationsPage() {
                 <TableHead>Register No</TableHead>
                 <TableHead>Student</TableHead>
                 <TableHead className="hidden md:table-cell">Department</TableHead>
+                <TableHead>Progress</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="hidden md:table-cell">Updated</TableHead>
@@ -51,6 +52,7 @@ export default async function MyEvaluationsPage() {
                   <TableCell>
                     <StatusBadge status={r.status} />
                   </TableCell>
+                  <TableCell>{r.decision ? <StatusBadge status={r.decision} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
                     {r.total_score ?? "–"}
                     <span className="text-xs font-normal text-muted-foreground">/{r.max_total ?? "–"}</span>

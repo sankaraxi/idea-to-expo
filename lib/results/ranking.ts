@@ -13,6 +13,8 @@
  *   REGISTER_NUMBER_ASC  register number order (always breaks ties)
  */
 
+import type { Decision } from "@/lib/decision";
+
 export interface StudentResult {
   studentId: string;
   registerNumber: string;
@@ -24,6 +26,7 @@ export interface StudentResult {
   tieBreakPriority?: number | null;
   domains?: string | null;
   evaluatorName?: string | null;
+  decision?: Decision | null;
 }
 
 export interface RankedStudent extends StudentResult {

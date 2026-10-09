@@ -115,7 +115,7 @@ describe.skipIf(!hasMysql)("sheet sync queue", () => {
     await createStudent("R002");
     const c = await createCriterion("Overall", 10);
     await setEventStatus("LIVE");
-    await submitEvaluation(ev.evaluatorId, { studentId: s1, scores: { [c]: 5 }, remarks: null, domainIds: [] });
+    await submitEvaluation(ev.evaluatorId, { decision: "SELECTED", studentId: s1, scores: { [c]: 5 }, remarks: null, domainIds: [] });
     await run(pool(), "DELETE FROM sheet_sync_queue");
     const added = await enqueueFullResync(null);
     expect(added).toBe(2 + 1 + 1 + 1 + 1); // students, evaluator, evaluation, response row, results
@@ -153,9 +153,9 @@ describe.skipIf(!hasMysql)("reports, dashboard and results", () => {
     const ai = await createDomain("AI/ML");
     const web = await createDomain("Full stack");
     await setEventStatus("LIVE");
-    await submitEvaluation(e1.evaluatorId, { studentId: sA, scores: { [innovation]: 9, [impact]: 8 }, remarks: "great", domainIds: [ai, web] });
+    await submitEvaluation(e1.evaluatorId, { decision: "SELECTED", studentId: sA, scores: { [innovation]: 9, [impact]: 8 }, remarks: "great", domainIds: [ai, web] });
     await saveDraft(e1.evaluatorId, { studentId: sB, scores: { [innovation]: 3 }, remarks: null, domainIds: [] });
-    await submitEvaluation(e2.evaluatorId, { studentId: sC, scores: { [innovation]: 5, [impact]: 5 }, remarks: null, domainIds: [ai] });
+    await submitEvaluation(e2.evaluatorId, { decision: "WAITLISTED", studentId: sC, scores: { [innovation]: 5, [impact]: 5 }, remarks: null, domainIds: [ai] });
     return { e1, e2, sA, sB, sC, innovation, impact, ai, web };
   }
 
@@ -169,6 +169,7 @@ describe.skipIf(!hasMysql)("reports, dashboard and results", () => {
       not_evaluated: 0,
       average_percentage: 67.5,
       event_status: "LIVE",
+      decision_counts: { SELECTED: 1, WAITLISTED: 1, REJECTED: 0, NOT_SET: 0 },
       percentage_distribution: { "5": 1, "8": 1 },
       domain_counts: [{ domain: "AI/ML", count: 2 }, { domain: "Full stack", count: 1 }],
     });
@@ -178,6 +179,9 @@ describe.skipIf(!hasMysql)("reports, dashboard and results", () => {
       { department: "ECE", students: 1, completed: 0 },
     ]);
     expect("evaluation_capacity" in stats).toBe(false);
+    // Older evaluations (no status) are counted separately.
+    await run(pool(), "UPDATE evaluations SET decision = NULL WHERE status = 'COMPLETED' AND decision = 'WAITLISTED'");
+    expect((await getDashboardStats()).decision_counts).toEqual({ SELECTED: 1, WAITLISTED: 0, REJECTED: 0, NOT_SET: 1 });
   });
 
   it("lists evaluator progress without any limit/capacity", async () => {
@@ -207,7 +211,7 @@ describe.skipIf(!hasMysql)("reports, dashboard and results", () => {
 
   it("lists evaluations with domains/scores and filters by domain and evaluator", async () => {
     const { e1, ai, web, innovation } = await scenario();
-    const base = { evaluator: "", department: "", domain: "", q: "", status: "", page: 1 } as const;
+    const base = { evaluator: "", department: "", domain: "", q: "", status: "", decision: "", page: 1 } as const;
     const all = await listEvaluations({ ...base });
     expect(all.total).toBe(3);
     const byDomain = await listEvaluations({ ...base, domain: web });
@@ -217,6 +221,9 @@ describe.skipIf(!hasMysql)("reports, dashboard and results", () => {
     expect(byDomain.rows[0].domain_ids.sort()).toEqual([ai, web].sort());
     expect((await listEvaluations({ ...base, evaluator: e1.evaluatorId })).total).toBe(2);
     expect((await listEvaluations({ ...base, status: "IN_PROGRESS" })).rows.map((r) => r.register_number)).toEqual(["B001"]);
+    expect((await listEvaluations({ ...base, decision: "WAITLISTED" })).rows.map((r) => r.register_number)).toEqual(["C001"]);
+    expect((await listEvaluations({ ...base, decision: "REJECTED" })).total).toBe(0);
+    expect((await listEvaluations({ ...base, decision: "NOT_SET" })).rows.map((r) => r.register_number)).toEqual(["B001"]); // the draft
     expect((await getEvaluationOverviewsByIds([byDomain.rows[0].evaluation_id]))[0].scores).toEqual(byDomain.rows[0].scores);
   });
 

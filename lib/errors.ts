@@ -13,6 +13,8 @@ export const ERROR_MESSAGES = {
   UNKNOWN_CRITERION: "The evaluation criteria changed. Please reload the page.",
   UNKNOWN_DOMAIN: "The domain list changed. Please reload the page.",
   NO_CRITERIA: "No evaluation criteria are set up yet. Please contact the event admin.",
+  DECISION_REQUIRED: "Choose a status: Selected, Waitlisted or Rejected.",
+  INVALID_DECISION: "Status must be Selected, Waitlisted or Rejected.",
   REMARKS_TOO_LONG: "Remarks must be 5000 characters or fewer.",
   STUDENT_NOT_FOUND: "Student not found.",
   STUDENT_TAKEN: "This student is already being evaluated by another evaluator.",

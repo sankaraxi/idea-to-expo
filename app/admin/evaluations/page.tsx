@@ -29,6 +29,7 @@ export default async function EvaluationsPage({ searchParams }: PageProps<"/admi
     domain: stringParam(sp.domain),
     q: stringParam(sp.q),
     status: (["IN_PROGRESS", "COMPLETED"].includes(status) ? status : "") as EvaluationFilters["status"],
+    decision: (["SELECTED", "WAITLISTED", "REJECTED", "NOT_SET"].includes(stringParam(sp.decision)) ? stringParam(sp.decision) : "") as EvaluationFilters["decision"],
     page: pageParam(sp.page),
   };
   const [{ rows, total }, stats, evaluators, departments, domains] = await Promise.all([
@@ -74,8 +75,15 @@ export default async function EvaluationsPage({ searchParams }: PageProps<"/admi
             </option>
           ))}
         </select>
-        <select name="status" defaultValue={filters.status} className={selectClass} aria-label="Status">
-          <option value="">All statuses</option>
+        <select name="decision" defaultValue={filters.decision} className={selectClass} aria-label="Status">
+          <option value="">Any status</option>
+          <option value="SELECTED">Selected</option>
+          <option value="WAITLISTED">Waitlisted</option>
+          <option value="REJECTED">Rejected</option>
+          <option value="NOT_SET">Not set</option>
+        </select>
+        <select name="status" defaultValue={filters.status} className={selectClass} aria-label="Progress">
+          <option value="">Any progress</option>
           <option value="IN_PROGRESS">In progress</option>
           <option value="COMPLETED">Evaluated</option>
         </select>
@@ -92,6 +100,7 @@ export default async function EvaluationsPage({ searchParams }: PageProps<"/admi
               <TableHead>Student</TableHead>
               <TableHead className="hidden md:table-cell">Department</TableHead>
               <TableHead>Evaluator</TableHead>
+              <TableHead>Progress</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="hidden lg:table-cell">Domains</TableHead>
@@ -103,7 +112,7 @@ export default async function EvaluationsPage({ searchParams }: PageProps<"/admi
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                   No evaluations match these filters.
                 </TableCell>
               </TableRow>
@@ -121,6 +130,7 @@ export default async function EvaluationsPage({ searchParams }: PageProps<"/admi
                 <TableCell>
                   <StatusBadge status={r.status} />
                 </TableCell>
+                <TableCell>{r.decision ? <StatusBadge status={r.decision} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">
                   {r.status === "COMPLETED" ? (
                     <>

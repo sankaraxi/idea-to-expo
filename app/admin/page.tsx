@@ -39,6 +39,17 @@ export default async function AdminDashboard() {
         <StatCard label="Completion" value={`${completion.toFixed(1)}%`} />
       </div>
 
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Selected" value={stats.decision_counts.SELECTED} tone="success" />
+        <StatCard label="Waitlisted" value={stats.decision_counts.WAITLISTED} tone="warning" />
+        <StatCard label="Rejected" value={stats.decision_counts.REJECTED} tone="danger" />
+        <StatCard
+          label="Status not set"
+          value={stats.decision_counts.NOT_SET}
+          hint={stats.decision_counts.NOT_SET ? "evaluated without a status" : undefined}
+        />
+      </div>
+
       <Card>
         <CardContent className="space-y-2">
           <div className="flex justify-between text-sm">

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DECISIONS } from "@/lib/decision";
 import { isTieBreakerId } from "@/lib/results/ranking";
 
 export const uuidSchema = z.uuid();
@@ -20,6 +21,8 @@ export const evaluationInputSchema = z.object({
   studentId: uuidSchema,
   scores: scoresSchema,
   remarks: remarksSchema,
+  /** Selected / Waitlisted / Rejected. Optional for drafts; required to submit (enforced in the service). */
+  decision: z.enum(DECISIONS).nullable().default(null),
   domainIds: z.array(z.uuid()).max(20).default([]),
 });
 

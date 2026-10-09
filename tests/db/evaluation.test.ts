@@ -36,7 +36,7 @@ describe.skipIf(!hasMysql)("search-and-claim evaluation", () => {
   let genai: string;
 
   const submit = (ev: Ev, studentId: string, scores: Record<string, unknown>, remarks: string | null = null, domainIds: string[] = []) =>
-    submitEvaluation(ev.evaluatorId, { studentId, scores, remarks, domainIds });
+    submitEvaluation(ev.evaluatorId, { decision: "SELECTED", studentId, scores, remarks, domainIds });
   const draft = (ev: Ev, studentId: string, scores: Record<string, unknown>, remarks: string | null = null, domainIds: string[] = []) =>
     saveDraft(ev.evaluatorId, { studentId, scores, remarks, domainIds });
 
@@ -117,6 +117,60 @@ describe.skipIf(!hasMysql)("search-and-claim evaluation", () => {
     const [hit] = await searchStudents(evB.evaluatorId, "23CS", 10);
     expect(hit.claim_status).toBe("TAKEN");
     expect(await count("evaluations")).toBe(1);
+  });
+
+  it("requires a Status (Selected / Waitlisted / Rejected) to submit, but not for drafts", async () => {
+    const scores = { [innovation]: 6, [feasibility]: 10 };
+    await rejectsWith(submitEvaluation(evA.evaluatorId, { studentId: student, scores, remarks: null, domainIds: [] }), "DECISION_REQUIRED");
+    await rejectsWith(submitEvaluation(evA.evaluatorId, { studentId: student, scores, remarks: null, decision: null, domainIds: [] }), "DECISION_REQUIRED");
+    await rejectsWith(submitEvaluation(evA.evaluatorId, { studentId: student, scores, remarks: null, decision: "MAYBE", domainIds: [] }), "INVALID_DECISION");
+    await rejectsWith(saveDraft(evA.evaluatorId, { studentId: student, scores, remarks: null, decision: "maybe", domainIds: [] }), "INVALID_DECISION");
+    expect(await count("evaluations")).toBe(0);
+
+    await draft(evA, student, scores); // a draft without a status is fine
+    expect(await one(pool(), "SELECT decision, status FROM evaluations")).toEqual({ decision: null, status: "IN_PROGRESS" });
+  });
+
+  it("stores each Status, restores it in drafts, and keeps it through reopen", async () => {
+    for (const [i, decision] of (["SELECTED", "WAITLISTED", "REJECTED"] as const).entries()) {
+      const s = await createStudent(`DEC00${i}`);
+      await saveDraft(evA.evaluatorId, { studentId: s, scores: { [innovation]: 2 }, remarks: null, decision, domainIds: [] });
+      const detail = await getStudentForEvaluation(evA.evaluatorId, s);
+      expect(detail!.evaluation).toMatchObject({ decision, status: "IN_PROGRESS" });
+      await submitEvaluation(evA.evaluatorId, { studentId: s, scores: { [innovation]: 5, [feasibility]: 5 }, remarks: null, decision, domainIds: [] });
+      expect((await getStudentForEvaluation(evA.evaluatorId, s))!.evaluation).toMatchObject({ decision, status: "COMPLETED" });
+    }
+    const rows = await select<{ decision: string }>("SELECT decision FROM evaluations");
+    expect(rows.map((r) => r.decision).sort()).toEqual(["REJECTED", "SELECTED", "WAITLISTED"]);
+
+    const admin = await createAdmin();
+    const ev = await one<{ id: string }>(pool(), "SELECT id FROM evaluations WHERE decision = 'WAITLISTED'");
+    await adminReopenEvaluation(admin, ev!.id, "recheck");
+    expect(await one(pool(), "SELECT decision, status FROM evaluations WHERE id = ?", [ev!.id])).toEqual({ decision: "WAITLISTED", status: "IN_PROGRESS" });
+  });
+
+  it("treats a changed Status as a change (not a duplicate) and records it in the audit log", async () => {
+    const scores = { [innovation]: 6, [feasibility]: 10 };
+    await submit(evA, student, scores, "ok");
+    expect(await submitEvaluation(evA.evaluatorId, { studentId: student, scores, remarks: "ok", decision: "SELECTED", domainIds: [] })).toMatchObject({ duplicate: true });
+    await rejectsWith(submitEvaluation(evA.evaluatorId, { studentId: student, scores, remarks: "ok", decision: "REJECTED", domainIds: [] }), "ALREADY_SUBMITTED");
+    await run(pool(), "UPDATE app_settings SET allow_resubmission = 1 WHERE id = 1");
+    await submitEvaluation(evA.evaluatorId, { studentId: student, scores, remarks: "ok", decision: "REJECTED", domainIds: [] });
+    expect(await one(pool(), "SELECT decision FROM evaluations")).toEqual({ decision: "REJECTED" });
+    const log = await select<{ metadata: { decision: string } }>("SELECT metadata FROM audit_logs WHERE action = 'EVALUATION_UPDATED'");
+    expect(log[0].metadata.decision).toBe("REJECTED");
+  });
+
+  it("never queues the Status for Google Sheets", async () => {
+    await submit(evA, student, { [innovation]: 6, [feasibility]: 10 }, "ok");
+    const jobs = await select<{ entity_type: string }>("SELECT entity_type FROM sheet_sync_queue");
+    expect(jobs.length).toBeGreaterThan(0);
+    // The sheet writers read these rows; the verdict must not be part of what they produce.
+    const { evaluationRecord } = await import("@/lib/sheets/tabs");
+    const { getEvaluationOverviewsByIds } = await import("@/lib/services/reports");
+    const [overview] = await getEvaluationOverviewsByIds([(await one<{ id: string }>(pool(), "SELECT id FROM evaluations"))!.id]);
+    expect(overview.decision).toBe("SELECTED");
+    expect(JSON.stringify(evaluationRecord(overview, []))).not.toMatch(/SELECTED|Selected/);
   });
 
   it("has NO per-evaluator limit: one evaluator can take well over 50 students", async () => {

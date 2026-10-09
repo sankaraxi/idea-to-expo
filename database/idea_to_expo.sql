@@ -205,6 +205,8 @@ CREATE TABLE IF NOT EXISTS `evaluations` (
   `evaluator_id`  CHAR(36)    NOT NULL,
   `remarks`       TEXT        NULL,
   `status`        ENUM('IN_PROGRESS','COMPLETED') NOT NULL DEFAULT 'IN_PROGRESS',
+  -- The evaluator's verdict ("Status" in the portal). Database only: never written to Google Sheets.
+  `decision`      ENUM('SELECTED','WAITLISTED','REJECTED') NULL,
   `version`       INT         NOT NULL DEFAULT 1,
   `total_score`   INT         NULL,
   `max_total`     INT         NULL,
@@ -216,6 +218,7 @@ CREATE TABLE IF NOT EXISTS `evaluations` (
   UNIQUE KEY `uq_evaluations_student` (`student_id`),
   KEY `ix_evaluations_evaluator` (`evaluator_id`, `status`),
   KEY `ix_evaluations_status` (`status`),
+  KEY `ix_evaluations_decision` (`decision`),
   CONSTRAINT `chk_evaluations_remarks` CHECK (`remarks` IS NULL OR CHAR_LENGTH(`remarks`) <= 5000),
   CONSTRAINT `chk_evaluations_completed` CHECK (
     `status` <> 'COMPLETED'

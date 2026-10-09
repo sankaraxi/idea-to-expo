@@ -25,7 +25,7 @@ describe.skipIf(!hasMysql)("evaluator isolation (application-level authorization
     c1 = await createCriterion("Overall", 10);
     await setEventStatus("LIVE");
     await saveDraft(a.evaluatorId, { studentId: s1, scores: { [c1]: 4 }, remarks: "A private notes", domainIds: [] });
-    await submitEvaluation(b.evaluatorId, { studentId: s2, scores: { [c1]: 7 }, remarks: "B private remarks", domainIds: [] });
+    await submitEvaluation(b.evaluatorId, { decision: "SELECTED", studentId: s2, scores: { [c1]: 7 }, remarks: "B private remarks", domainIds: [] });
   });
   afterEach(async () => {
     await db.drop();
@@ -87,7 +87,7 @@ describe.skipIf(!hasMysql)("evaluator isolation (application-level authorization
 
   it("an evaluator cannot overwrite or submit for a student someone else holds", async () => {
     await rejectsWith(saveDraft(a.evaluatorId, { studentId: s2, scores: { [c1]: 1 }, remarks: "hijack", domainIds: [] }), "STUDENT_TAKEN");
-    await rejectsWith(submitEvaluation(a.evaluatorId, { studentId: s2, scores: { [c1]: 1 }, remarks: null, domainIds: [] }), "STUDENT_TAKEN");
+    await rejectsWith(submitEvaluation(a.evaluatorId, { decision: "SELECTED", studentId: s2, scores: { [c1]: 1 }, remarks: null, domainIds: [] }), "STUDENT_TAKEN");
     expect(await count("evaluations", "student_id = ? AND total_score = 7", [s2])).toBe(1);
   });
 });
@@ -126,7 +126,7 @@ describe.skipIf(!hasMysql)("concurrent claims", () => {
 
   it("a double-clicked submit stores one evaluation and one audit entry", async () => {
     const student = await createStudent("DBL001");
-    const submit = () => submitEvaluation(a.evaluatorId, { studentId: student, scores: { [c1]: 8 }, remarks: "good", domainIds: [] });
+    const submit = () => submitEvaluation(a.evaluatorId, { decision: "SELECTED", studentId: student, scores: { [c1]: 8 }, remarks: "good", domainIds: [] });
     const [first, second] = await Promise.all([submit(), submit()]);
     expect([first.duplicate, second.duplicate].sort()).toEqual([false, true]);
     expect(first.evaluationId).toBe(second.evaluationId);

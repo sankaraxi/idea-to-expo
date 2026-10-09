@@ -72,6 +72,7 @@ export default async function EvaluatorStudentPage({ params }: PageProps<"/evalu
                       scores: evaluation.scores,
                       remarks: evaluation.remarks ?? "",
                       domainIds: evaluation.domain_ids,
+                      decision: evaluation.decision,
                       status: evaluation.status,
                       updatedAt: evaluation.updated_at,
                     }

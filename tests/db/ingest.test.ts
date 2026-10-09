@@ -185,7 +185,7 @@ describe.skipIf(!hasMysql)("problem statement ingestion", () => {
     const c = await createCriterion("Overall", 10);
     await setEventStatus("LIVE");
     const studentId = (await one<{ id: string }>(pool(), "SELECT id FROM students"))!.id;
-    await submitEvaluation(ev.evaluatorId, { studentId, scores: { [c]: 5 }, remarks: null, domainIds: [] });
+    await submitEvaluation(ev.evaluatorId, { decision: "SELECTED", studentId, scores: { [c]: 5 }, remarks: null, domainIds: [] });
     await run(pool(), "DELETE FROM sheet_sync_queue");
     await ingestSubmissions([sub({ abstract: "Edited", submitted_at: "2026-10-04T10:00:00.000Z", _row: 7 })], "APPS_SCRIPT", null);
     const jobs = (await select<{ entity_type: string }>("SELECT entity_type FROM sheet_sync_queue")).map((j) => j.entity_type);
