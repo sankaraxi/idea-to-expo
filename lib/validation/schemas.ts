@@ -43,7 +43,6 @@ export const evaluatorSchema = z.object({
     .max(120)
     .optional()
     .transform((v) => v || null),
-  maxEvaluations: z.coerce.number().int().min(1).max(1000).default(50),
 });
 
 export const createEvaluatorSchema = evaluatorSchema.extend({
@@ -90,7 +89,6 @@ export const domainSchema = z.object({
 
 export const settingsSchema = z.object({
   allowResubmission: z.boolean(),
-  maxEvaluationsPerEvaluator: z.coerce.number().int().min(1).max(1000),
   tieBreakers: z
     .array(z.string())
     .max(10)

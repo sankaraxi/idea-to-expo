@@ -5,20 +5,21 @@ import { EmptyState, PageHeader } from "@/components/shared/ui-bits";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requireEvaluatorPage } from "@/lib/auth/session";
-import { getMyEvaluations, getMyQuota } from "@/lib/data/evaluator";
+import { getMyEvaluations } from "@/lib/data/evaluator";
 import { formatDateTime } from "@/lib/format";
 
 export const metadata: Metadata = { title: "My Evaluations" };
 
 export default async function MyEvaluationsPage() {
   const user = await requireEvaluatorPage();
-  const [rows, quota] = await Promise.all([getMyEvaluations(), getMyQuota(user.evaluatorId)]);
+  const rows = await getMyEvaluations(user.evaluatorId);
+  const submitted = rows.filter((r) => r.status === "COMPLETED").length;
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title="My Evaluations"
-        description={`${quota.completed} submitted · ${quota.inProgress} draft(s) · ${quota.remaining} of ${quota.cap} remaining`}
+        description={`${submitted} submitted · ${rows.length - submitted} draft(s)`}
       />
       {rows.length === 0 ? (
         <EmptyState title="No evaluations yet">

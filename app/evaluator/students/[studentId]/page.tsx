@@ -7,7 +7,7 @@ import { EvaluationForm } from "@/components/evaluator/evaluation-form";
 import { SubmissionDetails } from "@/components/shared/submission-details";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireEvaluatorPage } from "@/lib/auth/session";
-import { getActiveCriteria, getActiveDomains, getMyQuota, getStudentForEvaluation } from "@/lib/data/evaluator";
+import { getActiveCriteria, getActiveDomains, getStudentForEvaluation } from "@/lib/data/evaluator";
 import { getSettings } from "@/lib/data/settings";
 import { uuidSchema } from "@/lib/validation/schemas";
 
@@ -18,12 +18,11 @@ export default async function EvaluatorStudentPage({ params }: PageProps<"/evalu
   if (!uuidSchema.safeParse(studentId).success) notFound();
   const user = await requireEvaluatorPage();
 
-  const [detail, criteria, domains, settings, quota] = await Promise.all([
-    getStudentForEvaluation(studentId),
+  const [detail, criteria, domains, settings] = await Promise.all([
+    getStudentForEvaluation(user.evaluatorId, studentId),
     getActiveCriteria(),
     getActiveDomains(),
     getSettings(),
-    getMyQuota(user.evaluatorId),
   ]);
   if (!detail) notFound();
   const { student, idea, claim_status: claim, evaluation } = detail;
@@ -67,7 +66,6 @@ export default async function EvaluatorStudentPage({ params }: PageProps<"/evalu
               domains={domains}
               eventStatus={settings.event_status}
               allowResubmission={settings.allow_resubmission}
-              remainingQuota={quota.remaining}
               initial={
                 evaluation
                   ? {

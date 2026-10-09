@@ -13,8 +13,11 @@
       ],
       "port": 3100,
       "env": {
-        "NEXT_PUBLIC_SUPABASE_URL": "http://127.0.0.1:54321",
-        "NEXT_PUBLIC_SUPABASE_ANON_KEY": "dev-placeholder-anon-key"
+        "DATABASE_URL": "mysql://root@127.0.0.1:33991/idea_to_expo",
+        "GOOGLE_CLIENT_EMAIL": "",
+        "GOOGLE_PRIVATE_KEY": "",
+        "GOOGLE_SHEET_ID": "",
+        "GOOGLE_FORM_RESPONSE_SHEET_ID": ""
       }
     }
   ]

@@ -1,8 +1,8 @@
 /**
  * Small in-memory sliding-window limiter. On serverless platforms each
  * instance has its own window, so this is a best-effort brake against
- * hammering (login brute force, runaway autosave loops), layered on top of
- * Supabase Auth's own rate limits — not a hard global guarantee.
+ * hammering (login brute force, runaway autosave loops) — not a hard global
+ * guarantee.
  */
 const buckets = new Map<string, number[]>();
 

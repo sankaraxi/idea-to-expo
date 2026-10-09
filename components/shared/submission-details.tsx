@@ -3,6 +3,7 @@ import { PptViewer } from "@/components/shared/ppt-viewer";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/format";
+import { driveFileId } from "@/lib/drive/ppt-pdf";
 import { pptEmbedUrl, safeExternalUrl } from "@/lib/ppt";
 import type { Json } from "@/types/database";
 
@@ -60,7 +61,7 @@ export function SubmissionDetails({ idea }: { idea: Idea | null }) {
           )}
         </CardContent>
       </Card>
-      <PptViewer url={safeExternalUrl(idea.ppt_url)} embedUrl={pptEmbedUrl(idea.ppt_url)} />
+      <PptViewer url={safeExternalUrl(idea.ppt_url)} embedUrl={driveFileId(idea.ppt_url ?? "") ? `/api/ppt?url=${encodeURIComponent(idea.ppt_url!)}` : pptEmbedUrl(idea.ppt_url)} />
     </div>
   );
 }

@@ -1,52 +1,42 @@
 import "server-only";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { AppError } from "@/lib/errors";
-import { createClient } from "@/lib/supabase/server";
-import type { AppRole } from "@/types/database";
+import { createSession, destroySession, resolveSession, type SessionUser } from "@/lib/services/auth";
+import { SESSION_COOKIE } from "./session-cookie";
 
-export interface SessionUser {
-  id: string;
-  email: string;
-  role: AppRole;
-  name: string;
-  /** Present for EVALUATOR users with an ACTIVE evaluator record. */
-  evaluatorId: string | null;
-}
+export type { SessionUser };
 
 /**
- * Data Access Layer entry point. Validates the session with Supabase Auth
- * (getUser, not getSession — the JWT is verified server-side) and loads the
- * role from the database. Deduplicated per request.
+ * Data Access Layer entry point: validates the session cookie against the
+ * database on every request (deduplicated per request). Authorization is
+ * enforced here and in the services — there is no database-level row security,
+ * so every evaluator query is scoped by the evaluatorId derived from this
+ * session, never from request input.
  */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, full_name, email")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!profile) return null;
-
-  let evaluatorId: string | null = null;
-  let name = profile.full_name ?? user.email ?? "User";
-  if (profile.role === "EVALUATOR") {
-    const { data: evaluator } = await supabase
-      .from("evaluators")
-      .select("id, name, status")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (evaluator?.status === "ACTIVE") evaluatorId = evaluator.id;
-    if (evaluator) name = evaluator.name;
-  }
-
-  return { id: user.id, email: user.email ?? profile.email ?? "", role: profile.role, name, evaluatorId };
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return resolveSession(token);
 });
+
+/** Creates a session for the user and sets the cookie (call from a Server Action). */
+export async function startSession(userId: string, meta: { ip?: string | null; userAgent?: string | null }) {
+  const { token } = await createSession(userId, meta);
+  (await cookies()).set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    // No Max-Age: a browser-session cookie. The server-side expiry (12 h, sliding) is the real limit.
+  });
+}
+
+export async function endSession() {
+  const store = await cookies();
+  await destroySession(store.get(SESSION_COOKIE)?.value);
+  store.delete(SESSION_COOKIE);
+}
 
 export function homeFor(user: Pick<SessionUser, "role">) {
   return user.role === "ADMIN" ? "/admin" : "/evaluator";

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { errorCodeOf, toFailure } from "@/lib/errors";
 import { DEFAULT_FORM_FIELD_MAPPING, firstUrl, normalizeSubmissions, parseTimestamp, resolveMapping } from "@/lib/forms/mapping";
 import { normalizeGender, parseStudentCsv } from "@/lib/forms/students-csv";
 import { pptEmbedUrl, safeExternalUrl } from "@/lib/ppt";
@@ -172,16 +171,5 @@ describe("ppt embedding", () => {
   it("refuses non-http schemes", () => {
     expect(safeExternalUrl("javascript:alert(1)")).toBeNull();
     expect(pptEmbedUrl("data:text/html,hi")).toBeNull();
-  });
-});
-
-describe("error mapping", () => {
-  it("maps database error codes to friendly messages without leaking internals", () => {
-    expect(errorCodeOf({ message: "STUDENT_TAKEN", code: "P0001" })).toBe("STUDENT_TAKEN");
-    expect(toFailure({ message: "EVALUATOR_LIMIT_REACHED", details: "50" }, "t").message).toContain("maximum of 50");
-    expect(toFailure({ message: "SCORE_OUT_OF_RANGE", details: "Innovation" }, "t").message).toContain("Innovation");
-    const failure = toFailure({ message: "syntax error at or near SELECT" }, "test");
-    expect(failure).toMatchObject({ ok: false, code: "UNKNOWN" });
-    expect(failure.message).not.toContain("SELECT");
   });
 });

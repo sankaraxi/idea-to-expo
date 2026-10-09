@@ -26,7 +26,6 @@ const formSchema = z.object({
   email: z.email("Enter a valid email"),
   employeeId: z.string().trim().max(50),
   department: z.string().trim().max(120),
-  maxEvaluations: z.coerce.number<number>().int().min(1).max(1000),
   password: z.string(),
 });
 type FormValues = z.infer<typeof formSchema>;
@@ -47,7 +46,7 @@ function EvaluatorForm({
         ? formSchema.extend({ password: z.string().min(8, "At least 8 characters").max(72) })
         : formSchema,
     ),
-    defaultValues: { name: "", email: "", employeeId: "", department: "", maxEvaluations: 50, password: "", ...defaults },
+    defaultValues: { name: "", email: "", employeeId: "", department: "", password: "", ...defaults },
   });
   const errors = form.formState.errors;
 
@@ -81,9 +80,8 @@ function EvaluatorForm({
       {field("email", "Email (login)", { type: "email", autoComplete: "off" })}
       <div className="grid grid-cols-2 gap-3">
         {field("employeeId", "Employee ID")}
-        {field("maxEvaluations", "Max evaluations", { type: "number", min: 1, max: 1000 })}
+        {field("department", "Department")}
       </div>
-      {field("department", "Department")}
       {mode === "create" && field("password", "Initial password", { type: "password", autoComplete: "new-password" })}
       <DialogFooter>
         <Button type="submit" disabled={pending}>
@@ -161,7 +159,6 @@ export function EvaluatorRowActions({ row }: { row: EvaluatorProgressRow }) {
               email: row.email,
               employeeId: row.employee_id ?? "",
               department: row.department ?? "",
-              maxEvaluations: row.max_evaluations,
             }}
             onDone={() => setEditOpen(false)}
           />

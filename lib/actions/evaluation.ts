@@ -5,15 +5,15 @@ import { z } from "zod";
 import { requireEvaluator } from "@/lib/auth/session";
 import { fail, ok, toFailure, type ActionResult } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
+import * as evaluations from "@/lib/services/evaluations";
 import { scheduleSheetSync } from "@/lib/sheets/trigger";
-import { createClient } from "@/lib/supabase/server";
 import { evaluationInputSchema, uuidSchema } from "@/lib/validation/schemas";
-import type { Json, SearchResultRow } from "@/types/database";
+import type { SearchResultRow } from "@/types/database";
 
 /**
- * Evaluator mutations. Evaluator identity is never sent by the client: the
- * RPCs resolve it from auth.uid(), lock the student row (one evaluator per
- * student) and the evaluator row (cap), and validate scores against criteria.
+ * Evaluator mutations. The evaluator id comes from the authenticated session
+ * (requireEvaluator), never from the request; only the student id, scores,
+ * remarks and domains cross the wire.
  */
 
 export interface EvaluationInput {
@@ -35,10 +35,7 @@ export async function searchStudents(query: string): Promise<ActionResult<Search
     const q = z.string().trim().max(100).parse(query ?? "");
     if (q.length < 2) return ok([]);
     if (!rateLimit(`search:${user.id}`, 120, 60_000)) return fail("RATE_LIMITED");
-    const supabase = await createClient();
-    const { data, error } = await supabase.rpc("search_students", { p_query: q, p_limit: 20 });
-    if (error) return toFailure(error, "searchStudents");
-    return ok(data ?? []);
+    return ok(await evaluations.searchStudents(user.evaluatorId, q, 20));
   } catch (error) {
     return toFailure(error, "searchStudents");
   }
@@ -50,17 +47,8 @@ export async function saveDraft(input: EvaluationInput): Promise<ActionResult<{ 
     const parsed = parseInput(input);
     if (parsed.error) return parsed.error;
     if (!rateLimit(`draft:${user.id}`, 120, 60_000)) return fail("RATE_LIMITED");
-
-    const supabase = await createClient();
-    const { data, error } = await supabase.rpc("save_evaluation_draft", {
-      p_student_id: parsed.data.studentId,
-      p_scores: parsed.data.scores as Json,
-      p_remarks: parsed.data.remarks,
-      p_domain_ids: parsed.data.domainIds,
-    });
-    if (error) return toFailure(error, "saveDraft");
-    const result = data as { saved_at: string; version: number };
-    return ok({ savedAt: result.saved_at, version: result.version });
+    const result = await evaluations.saveDraft(user.evaluatorId, parsed.data);
+    return ok({ savedAt: result.savedAt, version: result.version });
   } catch (error) {
     return toFailure(error, "saveDraft");
   }
@@ -75,20 +63,11 @@ export async function submitEvaluation(
     if (parsed.error) return parsed.error;
     if (!rateLimit(`submit:${user.id}`, 30, 60_000)) return fail("RATE_LIMITED");
 
-    const supabase = await createClient();
-    const { data, error } = await supabase.rpc("submit_evaluation", {
-      p_student_id: parsed.data.studentId,
-      p_scores: parsed.data.scores as Json,
-      p_remarks: parsed.data.remarks,
-      p_domain_ids: parsed.data.domainIds,
-    });
-    if (error) return toFailure(error, "submitEvaluation");
-
-    // Supabase has committed; Google Sheets catches up asynchronously.
+    const result = await evaluations.submitEvaluation(user.evaluatorId, parsed.data);
+    // The database has committed; Google Sheets catches up asynchronously.
     scheduleSheetSync();
     revalidatePath("/evaluator", "layout");
-    const r = data as { submitted_at: string; total_score: number; max_total: number; duplicate: boolean };
-    return ok({ submittedAt: r.submitted_at, totalScore: r.total_score, maxTotal: r.max_total, duplicate: r.duplicate });
+    return ok({ submittedAt: result.submittedAt, totalScore: result.totalScore, maxTotal: result.maxTotal, duplicate: result.duplicate });
   } catch (error) {
     return toFailure(error, "submitEvaluation");
   }
@@ -97,12 +76,10 @@ export async function submitEvaluation(
 /** Give back a student this evaluator started but has not submitted. */
 export async function releaseMyEvaluation(studentId: string): Promise<ActionResult> {
   try {
-    await requireEvaluator();
+    const user = await requireEvaluator();
     const id = uuidSchema.safeParse(studentId);
     if (!id.success) return fail("VALIDATION");
-    const supabase = await createClient();
-    const { error } = await supabase.rpc("release_my_evaluation", { p_student_id: id.data });
-    if (error) return toFailure(error, "releaseMyEvaluation");
+    await evaluations.releaseMyEvaluation(user.evaluatorId, id.data);
     scheduleSheetSync();
     revalidatePath("/evaluator", "layout");
     return ok();

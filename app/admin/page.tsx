@@ -17,7 +17,6 @@ export default async function AdminDashboard() {
   const students = Number(stats.total_students);
   const completed = Number(stats.completed_evaluations);
   const completion = students ? (completed / students) * 100 : 0;
-  const shortfall = students - Number(stats.evaluation_capacity);
 
   return (
     <div className="space-y-5">
@@ -32,25 +31,13 @@ export default async function AdminDashboard() {
             .filter(Boolean)
             .join(" · ") || undefined}
         />
-        <StatCard
-          label="Evaluators"
-          value={stats.total_evaluators}
-          hint={`capacity ${stats.evaluation_capacity}`}
-          tone={shortfall > 0 ? "danger" : undefined}
-        />
+        <StatCard label="Evaluators" value={stats.total_evaluators} />
         <StatCard label="Average score" value={stats.average_percentage === null ? "—" : `${stats.average_percentage}%`} />
         <StatCard label="Evaluated" value={completed} tone="success" />
         <StatCard label="In progress" value={stats.in_progress_evaluations} tone="warning" />
         <StatCard label="Not evaluated" value={stats.not_evaluated} />
         <StatCard label="Completion" value={`${completion.toFixed(1)}%`} />
       </div>
-
-      {shortfall > 0 && (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          Evaluator capacity ({stats.evaluation_capacity}) is {shortfall} short of the number of students. Add evaluators or raise
-          the per-evaluator limit in Settings.
-        </p>
-      )}
 
       <Card>
         <CardContent className="space-y-2">

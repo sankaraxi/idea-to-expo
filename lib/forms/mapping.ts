@@ -78,6 +78,12 @@ export function resolveMapping(stored: unknown): FormFieldMapping {
 export const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /**
+ * Columns organisers add for the portal to fill: "criteria 1", "criteria 2", … and
+ * "total score" / "total". They are never read back in as form answers.
+ */
+export const isScoreColumnHeader = (normalized: string) => /^criteria\d+$/.test(normalized) || normalized === "totalscore" || normalized === "total";
+
+/**
  * Maps header indexes to fields: exact (normalised) alias match first, then
  * "header starts with alias" so long Google Form question titles such as
  * "Your presentation (ppt/pdf's drive link)" still match "Your presentation".
@@ -175,6 +181,7 @@ export function normalizeSubmissions(
   excludeHeaders: readonly string[] = [],
 ): { submissions: NormalizedSubmission[]; missingFields: string[] } {
   const exclude = new Set([...excludeHeaders, ...mapping.ignore].map(normalizeHeader).filter(Boolean));
+  headers.forEach((h) => isScoreColumnHeader(normalizeHeader(String(h ?? ""))) && exclude.add(normalizeHeader(String(h ?? ""))));
   const { fieldByIndex, normalized } = matchHeaders(headers, mapping.fields, FORM_FIELDS, exclude);
   const mapped = new Set(fieldByIndex.values());
   if (!mapped.has("register_number") && !mapped.has("email")) {

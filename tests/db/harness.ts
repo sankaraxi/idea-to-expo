@@ -1,150 +1,124 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PGlite } from "@electric-sql/pglite";
+import mysql from "mysql2/promise";
+import { createUser } from "@/lib/services/auth";
+import { createEvaluator } from "@/lib/services/evaluators";
+import { closePool } from "@/lib/db/pool";
+import { one, pool, rows, run, uuid } from "@/lib/db/sql";
+import { AppError } from "@/lib/errors";
 
 /**
- * Minimal stand-in for the parts of Supabase the migrations depend on:
- * the anon/authenticated/service_role roles and the auth schema helpers.
- * auth.uid()/auth.role() read the same GUCs PostgREST sets per request.
+ * DB tests run against a real MySQL server. Point MYSQL_TEST_URL at one whose
+ * user may create databases, e.g. mysql://root:password@127.0.0.1:3306
+ * Every test gets a fresh database built from database/idea_to_expo.sql (the
+ * same file you import), and it is dropped afterwards. Tests are skipped
+ * when MYSQL_TEST_URL is not set.
  */
-const SUPABASE_STUB = `
-  create role anon nologin;
-  create role authenticated nologin;
-  create role service_role nologin bypassrls;
-  create schema auth;
-  grant usage on schema auth to anon, authenticated, service_role;
-  create table auth.users (
-    id uuid primary key default gen_random_uuid(),
-    email text unique,
-    created_at timestamptz not null default now()
-  );
-  create function auth.uid() returns uuid language sql stable as $$
-    select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
-  $$;
-  create function auth.role() returns text language sql stable as $$
-    select nullif(current_setting('request.jwt.claim.role', true), '')
-  $$;
-  grant execute on function auth.uid() to anon, authenticated, service_role;
-  grant execute on function auth.role() to anon, authenticated, service_role;
-`;
+export const MYSQL_TEST_URL = process.env.MYSQL_TEST_URL ?? "";
+export const hasMysql = MYSQL_TEST_URL !== "";
 
-const MIGRATIONS_DIR = join(import.meta.dirname, "..", "..", "supabase", "migrations");
+const SCHEMA = readFileSync(join(import.meta.dirname, "..", "..", "database", "idea_to_expo.sql"), "utf8");
 
-let template: Promise<PGlite> | null = null;
-let current: PGlite | null = null;
-
-/**
- * Returns a fresh, fully migrated database cloned from a per-worker template.
- * The previous clone is closed first: each instance holds its own WASM heap.
- */
-export async function createTestDb(): Promise<PGlite> {
-  template ??= buildMigratedDb();
-  if (current && !current.closed) await current.close();
-  current = (await (await template).clone()) as PGlite;
-  return current;
+export interface TestDb {
+  name: string;
+  /** Re-runs the import file on the same database (it must be idempotent). */
+  reimport(): Promise<void>;
+  drop(): Promise<void>;
 }
 
-async function buildMigratedDb(): Promise<PGlite> {
-  const db = new PGlite();
-  await db.exec(SUPABASE_STUB);
-  for (const file of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort()) {
-    try {
-      await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
-    } catch (error) {
-      throw new Error(`Migration ${file} failed: ${(error as Error).message}`);
-    }
-  }
-  return db;
-}
-
-type Role = "anon" | "authenticated" | "service_role";
-
-/** Runs `fn` as a given Postgres role + JWT subject, then resets to superuser. */
-export async function as<T>(
-  db: PGlite,
-  role: Role,
-  userId: string | null,
-  fn: () => Promise<T>,
-): Promise<T> {
-  await db.exec(`select set_config('request.jwt.claim.sub', '${userId ?? ""}', false);
-                 select set_config('request.jwt.claim.role', '${role}', false);
-                 set role ${role};`);
+export async function createTestDb(): Promise<TestDb> {
+  const name = `ite_test_${randomBytes(5).toString("hex")}`;
+  const admin = await mysql.createConnection({ uri: MYSQL_TEST_URL, multipleStatements: true });
   try {
-    return await fn();
+    await admin.query(`CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await admin.query(SCHEMA.replace(/`idea_to_expo`/g, `\`${name}\``));
   } finally {
-    await db.exec(`reset role;
-                   select set_config('request.jwt.claim.sub', '', false);
-                   select set_config('request.jwt.claim.role', '', false);`);
+    await admin.end();
   }
+  const url = new URL(MYSQL_TEST_URL);
+  url.pathname = `/${name}`;
+  process.env.DATABASE_URL = url.toString();
+  await closePool(); // the next query opens a pool on the new database
+  return {
+    name,
+    async reimport() {
+      const conn = await mysql.createConnection({ uri: MYSQL_TEST_URL, multipleStatements: true });
+      try {
+        await conn.query(SCHEMA.replace(/`idea_to_expo`/g, `\`${name}\``));
+      } finally {
+        await conn.end();
+      }
+    },
+    async drop() {
+      await closePool();
+      const conn = await mysql.createConnection({ uri: MYSQL_TEST_URL });
+      try {
+        await conn.query(`DROP DATABASE IF EXISTS \`${name}\``);
+      } finally {
+        await conn.end();
+      }
+    },
+  };
 }
 
-export async function createUser(db: PGlite, email: string, role: "ADMIN" | "EVALUATOR") {
-  const { rows } = await db.query<{ id: string }>(
-    "insert into auth.users (email) values ($1) returning id",
-    [email],
-  );
-  const id = rows[0].id;
-  await db.query("insert into public.profiles (id, role, email, full_name) values ($1, $2, $3, $3)", [
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+export async function createAdmin(email = "admin@example.edu", password = "admin-password-1") {
+  return createUser({ email, password, role: "ADMIN", fullName: "Admin" });
+}
+
+export async function createEvaluatorAccount(email: string, name = email, password = "evaluator-password-1") {
+  const admin = await createAdmin(`admin+${uuid()}@example.edu`);
+  const evaluatorId = await createEvaluator(admin, { name, email, employeeId: null, department: null, password });
+  const user = await one<{ user_id: string }>(pool(), "SELECT user_id FROM evaluators WHERE id = ?", [evaluatorId]);
+  return { evaluatorId, userId: user!.user_id, email, password, adminId: admin };
+}
+
+export async function createStudent(registerNumber: string, extra: { name?: string; department?: string; email?: string | null } = {}) {
+  const id = uuid();
+  await run(pool(), "INSERT INTO students (id, register_number, name, department, email, phone, source) VALUES (?, ?, ?, ?, ?, ?, 'SEED')", [
     id,
-    role,
-    email,
+    registerNumber,
+    extra.name ?? `Student ${registerNumber}`,
+    extra.department ?? "CSE",
+    extra.email === undefined ? `${registerNumber.toLowerCase()}@example.edu` : extra.email,
+    "9999999999",
   ]);
+  await run(pool(), "INSERT INTO ideas (id, student_id, abstract, ppt_url) VALUES (?, ?, 'An abstract', 'https://example.com/p.pptx')", [uuid(), id]);
   return id;
 }
 
-export async function createEvaluator(db: PGlite, email: string, name = email) {
-  const userId = await createUser(db, email, "EVALUATOR");
-  const { rows } = await db.query<{ id: string }>(
-    "insert into public.evaluators (user_id, name, email) values ($1, $2, $3) returning id",
-    [userId, name, email],
-  );
-  return { userId, evaluatorId: rows[0].id };
+export async function createCriterion(name: string, maxMarks: number, style = "SLIDER", sortOrder = 0) {
+  const id = uuid();
+  await run(pool(), "INSERT INTO evaluation_criteria (id, name, max_marks, input_style, sort_order) VALUES (?, ?, ?, ?, ?)", [id, name, maxMarks, style, sortOrder]);
+  return id;
 }
 
-export async function createStudent(db: PGlite, registerNumber: string, extra: Record<string, unknown> = {}) {
-  const { rows } = await db.query<{ id: string }>(
-    `insert into public.students (register_number, name, department, email, phone, source)
-     values ($1, $2, $3, $4, $5, 'SEED') returning id`,
-    [
-      registerNumber,
-      (extra.name as string) ?? `Student ${registerNumber}`,
-      (extra.department as string) ?? "CSE",
-      (extra.email as string) ?? `${registerNumber.toLowerCase()}@example.edu`,
-      "9999999999",
-    ],
-  );
-  await db.query(
-    "insert into public.ideas (student_id, abstract, ppt_url) values ($1, 'An abstract', 'https://example.com/p.pptx')",
-    [rows[0].id],
-  );
-  return rows[0].id;
+export async function createDomain(name: string) {
+  const id = uuid();
+  await run(pool(), "INSERT INTO domains (id, name) VALUES (?, ?)", [id, name]);
+  return id;
 }
 
-export async function createCriterion(db: PGlite, name: string, maxMarks: number, style = "SLIDER") {
-  const { rows } = await db.query<{ id: string }>(
-    "insert into public.evaluation_criteria (name, max_marks, input_style) values ($1, $2, $3) returning id",
-    [name, maxMarks, style],
-  );
-  return rows[0].id;
-}
+export const setEventStatus = (status: string) => run(pool(), "UPDATE app_settings SET event_status = ? WHERE id = 1", [status]);
 
-export async function createDomain(db: PGlite, name: string) {
-  const { rows } = await db.query<{ id: string }>("insert into public.domains (name) values ($1) returning id", [name]);
-  return rows[0].id;
-}
+export const count = async (table: string, where = "1=1", params: unknown[] = []) =>
+  Number((await one<{ n: number }>(pool(), `SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`, params))!.n);
 
-export async function setEventStatus(db: PGlite, status: string) {
-  await db.query("update public.app_settings set event_status = $1 where id", [status]);
-}
+export const select = <T>(sql: string, params: unknown[] = []) => rows<T>(pool(), sql, params);
 
-/** Expects a promise to reject with a Postgres error whose message contains `code`. */
+/** Awaits a rejection and asserts it is an AppError with the given code (or a MySQL error matching `code`). */
 export async function rejectsWith(promise: Promise<unknown>, code: string | RegExp) {
   try {
     await promise;
   } catch (error) {
-    const message = (error as Error).message;
-    if (typeof code === "string" ? message.includes(code) : code.test(message)) return;
-    throw new Error(`Expected error matching ${code}, got: ${message}`);
+    if (error instanceof AppError && typeof code === "string" && error.code === code) return;
+    const text = `${(error as { code?: string }).code ?? ""} ${(error as Error).message}`;
+    if (typeof code === "string" ? text.includes(code) : code.test(text)) return;
+    throw new Error(`Expected "${code}", got ${error instanceof AppError ? `AppError(${error.code})` : text}`);
   }
-  throw new Error(`Expected rejection matching ${code}, but promise resolved`);
+  throw new Error(`Expected rejection "${code}", but the promise resolved`);
 }

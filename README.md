@@ -1,13 +1,31 @@
 # Idea to Expo — Ideathon Evaluation Portal
 
-Next.js 16 · TypeScript (strict) · Tailwind 4 · shadcn/ui · Supabase (Postgres + Auth + RLS) · Google Sheets / Forms.
+Next.js 16 · TypeScript (strict) · Tailwind 4 · shadcn/ui · **MySQL 8+** (developed on 9.1) · Google Sheets / Forms.
 
-Two roles only: **ADMIN** and **EVALUATOR**.
+Two roles only: **ADMIN** and **EVALUATOR**. Accounts, sessions and permissions live in your own MySQL database — there is no external auth or hosted database service.
+
+## Quick start (local MySQL)
+
+1. **Import the database** (creates `idea_to_expo`; safe to re-run, never drops anything):
+   ```bash
+   mysql -u root -p < database/idea_to_expo.sql
+   ```
+   Or in MySQL Workbench: *File → Run SQL Script…* → `database/idea_to_expo.sql`.
+2. **Configure**: copy `.env.example` to `.env.local` and set `DATABASE_URL`, e.g.
+   `DATABASE_URL=mysql://root:your-password@127.0.0.1:3306/idea_to_expo`
+   (percent-encode special characters in the password: `@`→`%40`, `/`→`%2F`, `:`→`%3A`).
+3. **Create the first admin**:
+   ```bash
+   npm install
+   npm run admin:create -- admin@college.edu "a-strong-password" "Your Name"
+   ```
+4. **Run**: `npm run dev` → open http://localhost:3000 and sign in.
+5. *(Optional demo data)* set `SEED_ADMIN_PASSWORD` / `SEED_EVALUATOR_PASSWORD` in `.env.local`, then `npm run db:seed` (20 evaluators, 100 students, 90 submissions, 5 criteria, 6 domains, ~40% evaluated).
 
 ## Workflow
 
 ```
-Students CSV ──────────────► Supabase students (master data: name, register no, gender, department, email, phone)
+Students CSV ──────────────► students (master data: name, register no, gender, department, email, phone)
                                    ▲
 Problem statement Google Form      │ linked by register number → email (unmatched rows create a flagged student)
    └► response sheet ──► Apps Script webhook / "Sync problem statements"
@@ -15,13 +33,13 @@ Problem statement Google Form      │ linked by register number → email (unma
 Evaluator searches register no / name / email ──► opens student page (abstract + PPT/PDF)
    └► scores each admin-defined criterion (stars / slider / number) + ticks domains + remarks ──► Submit
                                    │
-                         Supabase (source of truth) ──► sync queue ──► scores + total written back into
-                                                                       the problem statement sheet columns
-                                                                       (+ optional reporting spreadsheet)
+                         MySQL (source of truth) ──► sync queue ──► scores + total written back into
+                                                                    the problem statement sheet columns
+                                                                    (+ optional reporting spreadsheet)
 ```
 
-- **No allocation.** Any evaluator can evaluate any student they find. The first save *claims* the student.
-- **One evaluator per student**, **≤ 50 students per evaluator** (global setting; individual evaluators can have a lower limit). Drafts count towards the limit; an evaluator can release an unsubmitted draft.
+- **No allocation and no capacity limits.** Any evaluator can evaluate any number of students. The first save *claims* the student.
+- **One evaluator per student.** A claimed student shows as "taken" to everyone else. An evaluator can release an unsubmitted draft; an admin can reopen or release a submitted evaluation.
 - **Criteria** (Admin → Criteria & Domains): name, guidance, max marks, awarding style (stars ≤ 10, slider, number box), order, active. Total = sum of criterion scores.
 - **Domains**: admin-managed list; evaluators tick one or more per idea.
 
@@ -29,50 +47,49 @@ Evaluator searches register no / name / email ──► opens student page (abst
 
 | Requirement | Where |
 | --- | --- |
-| One evaluator per student | `UNIQUE (evaluations.student_id)` + `claim_evaluation()` locks the student row |
-| Max N students per evaluator | `claim_evaluation()` locks the evaluator row and counts claims (drafts + submitted) before inserting |
-| Valid scores | Zod in the server action + `validated_scores()` in Postgres: known active criterion, integer, `0 ≤ score ≤ max_marks`, every criterion scored on submit |
-| Evaluators can't forge identity | No client write access to evaluation tables; RPCs derive the evaluator from `auth.uid()` |
-| Evaluators can't read others' work | RLS: evaluators read only students/ideas/evaluations they claimed; finding others goes through `search_students` / `get_student_for_evaluation`, which reveal only "taken" — never who or what score |
-| Event status gates submissions | Checked inside the RPCs (`LIVE` only; drafts also while `PAUSED`) |
-| Atomic, duplicate-safe submit | One transaction: claim → scores → domains → total → audit → sync-queue (trigger). Identical re-submit is a no-op |
-| Sheets outage never blocks evaluation | Supabase commits first; triggers enqueue; worker runs after the response, from cron, and from the admin Sync page; exponential-backoff retries |
-| Idempotent sheet writes | Response sheet: row found by register number/email, columns by header text — re-writing is harmless. Reporting tabs: keyed `Sync Key` column, never blind appends |
+| One evaluator per student | `UNIQUE (evaluations.student_id)` + `claim()` takes `SELECT … FOR UPDATE` on the student row inside a transaction |
+| Valid scores | Zod in the server action + `validateScores()` in the service: known active criterion, whole number, `0 ≤ score ≤ max_marks`, every criterion scored on submit; DB `CHECK`s as a backstop |
+| Evaluators can't read others' work | There is no database row security, so access control is in the services: the evaluator id comes from the server-side session (never the request), search/detail only ever say "taken" (no name, score or remarks), and every evaluator query is scoped by that id. Covered by `tests/db/isolation-concurrency.test.ts` |
+| Login & sessions | scrypt password hashes; random 256-bit session token in an `httpOnly` cookie, only its SHA-256 is stored; 12 h sliding expiry; disabling an evaluator or resetting a password deletes their sessions immediately |
+| Event status gates submissions | Checked inside the submit transaction (`LIVE` only; drafts also while `PAUSED`) |
+| Atomic, duplicate-safe submit | One transaction: claim → scores → domains → total → audit → sync queue. An identical re-submit is a no-op; a double click stores one row |
+| Sheets outage never blocks evaluation | The database commits first; sync jobs are queued in the same transaction; a worker runs after the response, from cron, and from the admin Sync page; exponential-backoff retries |
+| Idempotent sheet writes | Response sheet: row found by register number/email, columns by header text. Reporting tabs: keyed `Sync Key` column, never blind appends |
 | Score columns never re-ingested | The criterion/total/evaluator/domain columns are excluded from form ingestion automatically |
 | CSV is master data | Form responses only fill blank student fields; CSV re-imports update them |
-| Admin corrections | Admin never edits scores: **Reopen** (same evaluator revises) or **Release** (evaluation removed, scores kept in the audit log, student free again) — both need a reason |
+| Admin corrections | Admins never edit scores: **Reopen** (same evaluator revises) or **Release** (evaluation removed, scores kept in the audit log) — both need a reason |
+| Concurrency | `READ COMMITTED`, deadlock/lock-timeout retries, a named lock serialises form ingestion, `SKIP LOCKED` job claiming |
 
-## Setup
+## Database
 
-1. **Supabase**: apply the migrations in `supabase/migrations` in order (SQL editor, or `npx supabase link && npx supabase db push`). Disable public sign-ups in Auth settings.
-   - Upgrading from the allocation version: `20261009000001_search_and_criteria_workflow.sql` archives any v1 evaluations/assignments to `legacy_v1_*` tables, then drops allocation.
-2. **Env**: copy `.env.example` to `.env.local`. Only `NEXT_PUBLIC_*` values reach the browser.
-3. **First admin**: `npm run admin:create -- admin@college.edu "a-strong-password" "Your Name"`
-4. **Dev data (dev projects only)**: set `SEED_*`, then `npm run db:seed` (20 evaluators, 100 students, 90 submissions, 5 criteria, 6 domains, ~40% evaluated).
-5. `npm install && npm run dev`
+`database/idea_to_expo.sql` is the single source of truth for the schema (the tests build their databases from this exact file). Tables: `users`, `sessions`, `app_settings`, `students`, `ideas`, `evaluators`, `evaluation_criteria`, `domains`, `evaluations`, `evaluation_scores`, `evaluation_domains`, `audit_logs`, `sheet_sync_queue`, `sync_locks`, `form_sync_runs`.
 
-### Google
+- Requires MySQL 8.0.16+ (CHECK constraints, JSON, expression defaults, generated columns). Works on 8.x and 9.x; not tested on MariaDB.
+- All timestamps are UTC; the app sets the session time zone per connection.
+- Back up with `mysqldump -u root -p idea_to_expo > backup.sql`.
+
+## Google
 
 1. Create a service account, enable the **Google Sheets API**, create a JSON key → `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY`.
-2. Share the **problem statement response spreadsheet** with the service account as **Editor** → `GOOGLE_FORM_RESPONSE_SHEET_ID` (+ `GOOGLE_FORM_RESPONSE_RANGE`, the tab name).
-3. In that sheet, add your score columns beside the form responses (one per criterion, plus a total column; optionally evaluator and domains columns). Then in **Admin → Settings → Problem statement sheet — score columns**, map each criterion and the total to those headers (the page reads the sheet’s header row and shows ✓/✗ for each).
-4. Real-time form sync: open the response sheet → Extensions → Apps Script, paste `scripts/google-apps-script/FormSync.gs`, set Script properties `PORTAL_URL` and `FORM_SYNC_SECRET`, run `installTriggers` once.
+2. Share the **problem statement response spreadsheet** with the service account as **Editor** → `GOOGLE_FORM_RESPONSE_SHEET_ID` (the long id between `/d/` and `/edit` in the URL — **not** the number after `gid=`) and `GOOGLE_FORM_RESPONSE_RANGE` (the tab name).
+3. In that sheet, add your score columns beside the form responses (one per criterion, plus a total column; optionally evaluator and domains columns). In **Admin → Settings → Problem statement sheet — score columns**, map each criterion and the total to those headers (the page reads the sheet's header row and shows ✓/✗).
+4. Real-time form sync: open the response sheet → Extensions → Apps Script, paste `scripts/google-apps-script/FormSync.gs`, set Script properties `PORTAL_URL` and `FORM_SYNC_SECRET`, run `installTriggers` once. (The portal must be reachable from the internet for this; otherwise use the **Sync problem statements** button.)
 5. Optional: a separate reporting spreadsheet (Editor) → `GOOGLE_SHEET_ID`.
 
 ### Student CSV format
 
-`name, register number, gender, department, email, phone number` (header names are matched loosely; a template is linked on the Students page: `/templates/students-template.csv`). Emails must be unique per student.
+`name, register number, gender, department, email, phone number` — header names are matched loosely; a template is linked on the Students page (`/templates/students-template.csv`). Emails must be unique per student.
 
 ### Keeping the sheet worker running
 
-The worker runs right after each submission and every 15 s while “Auto-sync while open” is on (Sync page). For guaranteed background retries add **one** of: Supabase pg_cron (`supabase/optional/pg_cron_sheet_sync.sql`), or Vercel Cron (paid plan for per-minute) with `{"crons":[{"path":"/api/sync/process","schedule":"* * * * *"}]}` in `vercel.json`.
+The worker runs right after each submission and every 15 s while "Auto-sync while open" is on (Sync page). For guaranteed background retries, call `POST /api/sync/process` with `Authorization: Bearer $CRON_SECRET` every minute from any scheduler (Windows Task Scheduler + `curl`, cron, Vercel Cron on a paid plan: `{"crons":[{"path":"/api/sync/process","schedule":"* * * * *"}]}`).
 
 ## Event-day runbook
 
-1. **Students**: import the CSV, then “Sync problem statements”. Check the *No submission* and *Not in CSV* filters.
+1. **Students**: import the CSV, then "Sync problem statements". Check the *No submission* and *Not in CSV* filters.
 2. **Criteria & Domains**: add criteria (max marks + style) and domains.
-3. **Settings**: map the sheet score columns; confirm the per-evaluator limit (default 50).
-4. **Evaluators**: add/activate evaluators and share credentials. The dashboard warns if total capacity < number of students.
+3. **Settings**: map the sheet score columns.
+4. **Evaluators**: add/activate evaluators and share credentials.
 5. **Dashboard → Go live.**
 6. Evaluators: Find Student (type the register number, Enter) → read abstract / open PPT → score criteria → tick domains → remarks → Submit.
 7. Monitor **Dashboard / Evaluations / Sync**. If an evaluator leaves, release their drafts from **Evaluations**.
@@ -81,12 +98,19 @@ The worker runs right after each submission and every 15 s while “Auto-sync wh
 ## Testing
 
 ```bash
-npm run check      # typecheck + lint + all tests
-npm run test:db    # SQL tests: RLS, claiming, caps, criteria validation, CSV/form ingestion, queue (real Postgres via PGlite)
+npm run check                # typecheck + lint + all tests (DB tests are skipped without MYSQL_TEST_URL)
+MYSQL_TEST_URL=mysql://root:password@127.0.0.1:3306 npm run test:db
 ```
+
+The DB tests need a MySQL user that may `CREATE`/`DROP` databases. Each test builds a throw-away database from `database/idea_to_expo.sql` and drops it afterwards — they never touch `idea_to_expo`.
 
 ## Known limits
 
-- In-memory rate limiting is per server instance (best effort on serverless).
-- Embedded PPT/PDF previews need links the viewer can access (Drive “anyone with the link”). “Open PPT” always works.
+- In-memory rate limiting is per server instance.
+- Embedded PPT/PDF previews need links the service account (or the viewer) can access. "Open PPT" always works.
 - If several form responses exist for one student, the latest is shown and scores are written onto that row.
+- Authorization is enforced in the application layer (no database row security), so only the Next.js server should hold the database credentials; never expose MySQL to the internet.
+
+## Working with demo data safely
+
+The app (and its sync worker) uses whatever Google credentials are in `.env.local`. If you run the app on demo/seed data **with real Google settings**, the worker will write that demo data into those spreadsheets (the Students / Evaluators / Evaluations tabs get rows appended and Results / Dashboard are rewritten). For demos, leave `GOOGLE_*` empty or point them at a throw-away spreadsheet.
