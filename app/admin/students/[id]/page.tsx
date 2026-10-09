@@ -73,6 +73,10 @@ export default async function StudentDetailPage({ params }: PageProps<"/admin/st
                     By <span className="font-medium">{evaluation.evaluator_name}</span>
                     <span className="text-muted-foreground"> · {formatDateTime(evaluation.submitted_at ?? evaluation.updated_at)}</span>
                   </p>
+                  <p>
+                    Status:{" "}
+                    {evaluation.decision ? <StatusBadge status={evaluation.decision} /> : <span className="text-muted-foreground">not set</span>}
+                  </p>
                   <ul className="divide-y rounded-lg border">
                     {criteria.map((c) => (
                       <li key={c.id} className="flex justify-between px-3 py-1.5">

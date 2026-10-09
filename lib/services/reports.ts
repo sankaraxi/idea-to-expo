@@ -1,5 +1,6 @@
 import "server-only";
 import { escapeLike, one, pool, rows, rowsIn, type Queryable } from "@/lib/db/sql";
+import type { Decision } from "@/lib/decision";
 import type {
   AuditLogWithUser,
   CriterionRow,
@@ -22,7 +23,8 @@ const num = (v: unknown) => Number(v ?? 0);
 // ---------------------------------------------------------------------------
 
 export async function getDashboardStats(db: Queryable = pool()): Promise<DashboardStats> {
-  const [students, ideas, evaluators, evals, notEvaluated, distribution, domains, departments, settings, sync, lastForm] = await Promise.all([
+  const [students, ideas, evaluators, evals, notEvaluated, distribution, domains, departments, settings, sync, lastForm, decisions] = await Promise.all([
+
     one<{ n: number }>(db, "SELECT COUNT(*) AS n FROM students WHERE status = 'ACTIVE'"),
     one<{ submitted: number; incomplete: number; unmatched: number }>(
       db,
@@ -72,7 +74,10 @@ export async function getDashboardStats(db: Queryable = pool()): Promise<Dashboa
          FROM sheet_sync_queue`,
     ),
     one<{ at: string | null }>(db, "SELECT MAX(created_at) AS at FROM form_sync_runs"),
+    rows<{ decision: Decision | null; n: number }>(db, "SELECT decision, COUNT(*) AS n FROM evaluations WHERE status = 'COMPLETED' GROUP BY decision"),
   ]);
+  const decisionCounts = { SELECTED: 0, WAITLISTED: 0, REJECTED: 0, NOT_SET: 0 };
+  for (const d of decisions) decisionCounts[d.decision ?? "NOT_SET"] += num(d.n);
 
   return {
     total_students: num(students?.n),
@@ -83,6 +88,7 @@ export async function getDashboardStats(db: Queryable = pool()): Promise<Dashboa
     completed_evaluations: num(evals?.completed),
     in_progress_evaluations: num(evals?.in_progress),
     not_evaluated: num(notEvaluated?.n),
+    decision_counts: decisionCounts,
     average_percentage: evals?.average === null || evals?.average === undefined ? null : Number(evals.average),
     percentage_distribution: Object.fromEntries(distribution.map((d) => [String(d.bucket), num(d.n)])),
     domain_counts: domains.map((d) => ({ domain: d.domain, count: num(d.n) })),
@@ -132,7 +138,7 @@ const STUDENT_OVERVIEW_SQL = `
          s.created_at, s.updated_at,
          COALESCE(i.submission_status, 'MISSING') AS submission_status, i.ppt_url, i.matched_by,
          COALESCE(ev.status, 'NOT_EVALUATED') AS evaluation_status,
-         ev.id AS evaluation_id, ev.total_score, ev.max_total, ee.name AS evaluator_name
+         ev.id AS evaluation_id, ev.decision, ev.total_score, ev.max_total, ee.name AS evaluator_name
     FROM students s
     LEFT JOIN ideas i ON i.student_id = s.id
     LEFT JOIN evaluations ev ON ev.student_id = s.id
@@ -178,7 +184,7 @@ export const getStudentOverviewsByIds = (ids: readonly string[]) =>
 // ---------------------------------------------------------------------------
 
 const EVALUATION_OVERVIEW_SQL = `
-  SELECT ev.id AS evaluation_id, ev.status, ev.total_score, ev.max_total, ev.remarks, ev.started_at, ev.submitted_at, ev.updated_at,
+  SELECT ev.id AS evaluation_id, ev.status, ev.decision, ev.total_score, ev.max_total, ev.remarks, ev.started_at, ev.submitted_at, ev.updated_at,
          s.id AS student_id, s.register_number, s.name AS student_name, s.department,
          e.id AS evaluator_id, e.name AS evaluator_name,
          (SELECT GROUP_CONCAT(d.name ORDER BY d.sort_order, d.name SEPARATOR ', ')
@@ -209,6 +215,8 @@ export interface EvaluationFilters {
   domain: string;
   q: string;
   status: "" | "IN_PROGRESS" | "COMPLETED";
+  /** A verdict, or NOT_SET for evaluations without one. */
+  decision: "" | Decision | "NOT_SET";
   page: number;
 }
 
@@ -223,6 +231,8 @@ export async function listEvaluations(f: EvaluationFilters, pageSize = 50) {
     filter.add("(s.register_number LIKE ? OR s.name LIKE ?)", like, like);
   }
   if (f.status) filter.add("ev.status = ?", f.status);
+  if (f.decision === "NOT_SET") filter.add("ev.decision IS NULL");
+  else if (f.decision) filter.add("ev.decision = ?", f.decision);
   const clause = filter.sql;
   const params = filter.params;
 
@@ -264,7 +274,7 @@ export async function loadResultRows(db: Queryable = pool()): Promise<StudentRes
     rows<Omit<StudentResultRow, "scores">>(
       db,
       `SELECT s.id AS student_id, s.register_number, s.name, s.department, s.section, s.status, s.tie_break_priority,
-              ev.id AS evaluation_id, ev.total_score, ev.max_total, ev.submitted_at, e.name AS evaluator_name,
+              ev.id AS evaluation_id, ev.decision, ev.total_score, ev.max_total, ev.submitted_at, e.name AS evaluator_name,
               (SELECT GROUP_CONCAT(d.name ORDER BY d.sort_order, d.name SEPARATOR ', ')
                  FROM evaluation_domains ed JOIN domains d ON d.id = ed.domain_id
                 WHERE ed.evaluation_id = ev.id) AS domains

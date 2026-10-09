@@ -165,7 +165,7 @@ describe("server action authorisation", () => {
 
   it("rejects submissions from signed-out users and admins without touching the service", async () => {
     const { submitEvaluation } = await import("@/lib/actions/evaluation");
-    const input = { studentId, scores: { [C1]: 8 }, remarks: "", domainIds: [] };
+    const input = { studentId, scores: { [C1]: 8 }, remarks: "", decision: null, domainIds: [] };
     expect(await submitEvaluation(input)).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
     signedIn(admin);
     expect(await submitEvaluation(input)).toMatchObject({ ok: false, code: "FORBIDDEN" });
@@ -175,14 +175,14 @@ describe("server action authorisation", () => {
   it("validates input server-side and takes the evaluator id from the session, never the request", async () => {
     signedIn(evaluator);
     const { submitEvaluation } = await import("@/lib/actions/evaluation");
-    expect(await submitEvaluation({ studentId, scores: { [C1]: 7.5 }, remarks: "", domainIds: [] })).toMatchObject({ ok: false, code: "VALIDATION" });
-    expect(await submitEvaluation({ studentId: "nope", scores: {}, remarks: "", domainIds: [] })).toMatchObject({ ok: false });
+    expect(await submitEvaluation({ studentId, scores: { [C1]: 7.5 }, remarks: "", decision: null, domainIds: [] })).toMatchObject({ ok: false, code: "VALIDATION" });
+    expect(await submitEvaluation({ studentId: "nope", scores: {}, remarks: "", decision: null, domainIds: [] })).toMatchObject({ ok: false });
     expect(submitEvaluationService).not.toHaveBeenCalled();
 
     // A forged evaluatorId in the payload is ignored: only the session's id is used.
-    const forged = { studentId, scores: { [C1]: 8 }, remarks: " ok ", domainIds: [], evaluatorId: "someone-else" } as never;
+    const forged = { studentId, scores: { [C1]: 8 }, remarks: " ok ", decision: null, domainIds: [], evaluatorId: "someone-else" } as never;
     expect(await submitEvaluation(forged)).toMatchObject({ ok: true });
-    expect(submitEvaluationService).toHaveBeenCalledWith("ev1", { studentId, scores: { [C1]: 8 }, remarks: "ok", domainIds: [] });
+    expect(submitEvaluationService).toHaveBeenCalledWith("ev1", { studentId, scores: { [C1]: 8 }, remarks: "ok", decision: null, domainIds: [] });
   });
 
   it("rejects admin actions from evaluators and signed-out users", async () => {

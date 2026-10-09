@@ -20,6 +20,7 @@ export interface EvaluationInput {
   studentId: string;
   scores: Record<string, number>;
   remarks: string;
+  decision: string | null;
   domainIds: string[];
 }
 

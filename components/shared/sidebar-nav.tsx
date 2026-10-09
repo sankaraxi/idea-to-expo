@@ -21,6 +21,7 @@ import {
   Users,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { PoweredBy } from "./brand";
 import { cn } from "@/lib/utils";
 
 const ICONS = {
@@ -93,6 +94,9 @@ export function MobileNav({ items }: { items: NavItem[] }) {
       <SheetContent side="left" className="w-64 bg-sidebar p-0 text-sidebar-foreground">
         <SheetTitle className="px-5 pt-5 text-sidebar-accent-foreground">IDEA TO EXPO</SheetTitle>
         <NavLinks items={items} onNavigate={() => setOpen(false)} />
+        <div className="border-t border-sidebar-border p-4">
+          <PoweredBy glossy stacked logoHeight={26} />
+        </div>
       </SheetContent>
     </Sheet>
   );

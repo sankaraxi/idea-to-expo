@@ -73,6 +73,7 @@ class FakeSheets implements SheetsApi {
 
 const tab = { title: "Evaluations", headers: TABS.EVALUATION.headers };
 const criteria = [{ id: "c1", name: "Innovation", max_marks: 10 }];
+const record_ = (key: string, score: number) => record(key, score);
 const record = (key: string, score: number, remarks = "ok") =>
   evaluationRecord(
     {
@@ -81,6 +82,7 @@ const record = (key: string, score: number, remarks = "ok") =>
       total_score: score,
       max_total: 10,
       remarks,
+      decision: "SELECTED",
       started_at: "2026-10-08T05:00:00Z",
       submitted_at: "2026-10-08T05:00:00Z",
       updated_at: "2026-10-08T05:00:00Z",
@@ -111,6 +113,12 @@ describe("columnLetter", () => {
 });
 
 describe("sheets engine", () => {
+  it("never writes the Status (decision) to the sheet", () => {
+    const record = record_("k", 7);
+    expect(JSON.stringify(record)).not.toMatch(/SELECTED|Selected|WAITLISTED|REJECTED/);
+    expect(TABS.EVALUATION.headers.join(",")).not.toMatch(/status.*(select|reject)/i);
+  });
+
   it("creates missing tabs with headers", async () => {
     const api = new FakeSheets();
     await ensureTabs(api, [tab]);

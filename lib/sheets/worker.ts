@@ -237,6 +237,7 @@ export async function loadRankedResults() {
         tieBreakPriority: r.tie_break_priority,
         domains: r.domains,
         evaluatorName: r.evaluator_name,
+        decision: r.decision,
       })),
     settings.tie_breakers,
   );

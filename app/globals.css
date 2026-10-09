@@ -77,13 +77,14 @@
   --chart-4: oklch(0.72 0.15 75);
   --chart-5: oklch(0.6 0.18 25);
   --radius: 0.625rem;
-  --sidebar: oklch(0.25 0.05 262);
-  --sidebar-foreground: oklch(0.9 0.02 255);
-  --sidebar-primary: oklch(0.98 0 0);
-  --sidebar-primary-foreground: oklch(0.25 0.05 262);
-  --sidebar-accent: oklch(0.32 0.06 262);
-  --sidebar-accent-foreground: oklch(0.99 0 0);
-  --sidebar-border: oklch(0.32 0.05 262);
+  /* White chrome so the (dark navy) SindhanAI logo is always legible. */
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.38 0.03 260);
+  --sidebar-primary: oklch(0.42 0.14 262);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.955 0.02 255);
+  --sidebar-accent-foreground: oklch(0.28 0.08 262);
+  --sidebar-border: oklch(0.92 0.01 255);
   --sidebar-ring: oklch(0.55 0.14 262);
 }
 

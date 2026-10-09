@@ -4,6 +4,8 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type EventStatus = "NOT_STARTED" | "LIVE" | "PAUSED" | "CLOSED";
 export type EvaluationStatus = "IN_PROGRESS" | "COMPLETED";
+export type { Decision } from "@/lib/decision";
+import type { Decision } from "@/lib/decision";
 export type ClaimStatus = "AVAILABLE" | "MINE_IN_PROGRESS" | "MINE_COMPLETED" | "TAKEN";
 export type InputStyle = "STARS" | "SLIDER" | "NUMBER";
 export type SyncEntityType = "STUDENT" | "EVALUATOR" | "EVALUATION" | "RESULTS" | "RESPONSE_ROW";
@@ -106,6 +108,7 @@ export type EvaluationRow = {
   evaluator_id: string;
   remarks: string | null;
   status: EvaluationStatus;
+  decision: Decision | null;
   version: number;
   total_score: number | null;
   max_total: number | null;
@@ -161,6 +164,7 @@ export type FormSyncRunRow = {
 export type MyEvaluationRow = {
   evaluation_id: string;
   status: EvaluationStatus;
+  decision: Decision | null;
   total_score: number | null;
   max_total: number | null;
   started_at: string;
@@ -203,6 +207,7 @@ export type StudentOverviewRow = {
   matched_by: MatchedBy | null;
   evaluation_status: EvaluationStatus | "NOT_EVALUATED";
   evaluation_id: string | null;
+  decision: Decision | null;
   total_score: number | null;
   max_total: number | null;
   evaluator_name: string | null;
@@ -214,6 +219,7 @@ export type EvaluationOverviewRow = {
   total_score: number | null;
   max_total: number | null;
   remarks: string | null;
+  decision: Decision | null;
   started_at: string;
   submitted_at: string | null;
   updated_at: string;
@@ -237,6 +243,7 @@ export type StudentResultRow = {
   status: StudentRow["status"];
   tie_break_priority: number | null;
   evaluation_id: string;
+  decision: Decision | null;
   total_score: number;
   max_total: number;
   scores: Record<string, number>;
@@ -279,6 +286,7 @@ export type StudentForEvaluation = {
     id: string;
     status: EvaluationStatus;
     remarks: string | null;
+    decision: Decision | null;
     version: number;
     updated_at: string;
     submitted_at: string | null;
@@ -298,6 +306,8 @@ export type DashboardStats = {
   completed_evaluations: number;
   in_progress_evaluations: number;
   not_evaluated: number;
+  /** Completed evaluations by the evaluator's verdict (NOT_SET = submitted before the field existed). */
+  decision_counts: { SELECTED: number; WAITLISTED: number; REJECTED: number; NOT_SET: number };
   average_percentage: number | null;
   percentage_distribution: Record<string, number>;
   domain_counts: { domain: string; count: number }[];

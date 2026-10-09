@@ -142,8 +142,8 @@ try {
       const total = scores.reduce((sum, [, v]) => sum + v, 0);
       const id = randomUUID();
       await q(
-        "INSERT INTO evaluations (id, student_id, evaluator_id, status, total_score, max_total, submitted_at, remarks) VALUES (?, ?, ?, 'COMPLETED', ?, ?, NOW(3), 'Seeded sample evaluation.')",
-        [id, s.id, evaluator.id, total, maxTotal],
+        "INSERT INTO evaluations (id, student_id, evaluator_id, status, decision, total_score, max_total, submitted_at, remarks) VALUES (?, ?, ?, 'COMPLETED', ?, ?, ?, NOW(3), 'Seeded sample evaluation.')",
+        [id, s.id, evaluator.id, total / maxTotal >= 0.7 ? "SELECTED" : total / maxTotal >= 0.55 ? "WAITLISTED" : "REJECTED", total, maxTotal],
       );
       await q("INSERT INTO evaluation_scores (evaluation_id, criterion_id, score) VALUES ?", [scores.map(([cid, v]) => [id, cid, v])]);
       if (domains.length) await q("INSERT INTO evaluation_domains (evaluation_id, domain_id) VALUES (?, ?)", [id, domains[randomInt(domains.length)].id]);

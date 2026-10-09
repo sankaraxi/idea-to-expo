@@ -1,4 +1,5 @@
 import "server-only";
+import { isDecision, type Decision } from "@/lib/decision";
 import { isMysqlError, one, pool, rows, run, uuid, withTransaction, escapeLike, type Queryable } from "@/lib/db/sql";
 import { AppError } from "@/lib/errors";
 import type {
@@ -32,6 +33,8 @@ export interface EvaluationInput {
   studentId: string;
   scores: Record<string, unknown>;
   remarks: string | null;
+  /** Selected / Waitlisted / Rejected — optional on drafts, required on submit. */
+  decision?: string | null;
   domainIds: string[];
 }
 
@@ -39,6 +42,12 @@ function normalizeRemarks(value: string | null | undefined) {
   const text = (value ?? "").trim();
   if (text.length > MAX_REMARKS) throw new AppError("REMARKS_TOO_LONG");
   return text === "" ? null : text;
+}
+
+function normalizeDecision(value: string | null | undefined): Decision | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (!isDecision(value)) throw new AppError("INVALID_DECISION");
+  return value;
 }
 
 /** Scores keyed by criterion id → whole numbers within 0..max for ACTIVE criteria. */
@@ -137,6 +146,7 @@ export async function saveDraft(evaluatorId: string, input: EvaluationInput) {
     const settings = await readSettings(tx);
     if (settings.event_status !== "LIVE" && settings.event_status !== "PAUSED") throw new AppError("EVENT_NOT_LIVE");
     const remarks = normalizeRemarks(input.remarks);
+    const decision = normalizeDecision(input.decision);
     const criteria = await activeCriteria(tx);
     const scores = validateScores(criteria, input.scores, false);
     const domains = await validateDomains(tx, input.domainIds);
@@ -147,8 +157,8 @@ export async function saveDraft(evaluatorId: string, input: EvaluationInput) {
     await replaceScoresAndDomains(tx, evaluation.id, scores, domains);
     await run(
       tx,
-      "UPDATE evaluations SET remarks = ?, version = version + 1, total_score = ?, max_total = ? WHERE id = ?",
-      [remarks, sum(scores.values()), sum(criteria.map((c) => c.max_marks)), evaluation.id],
+      "UPDATE evaluations SET remarks = ?, decision = ?, version = version + 1, total_score = ?, max_total = ? WHERE id = ?",
+      [remarks, decision, sum(scores.values()), sum(criteria.map((c) => c.max_marks)), evaluation.id],
     );
     const saved = (await one<EvaluationRow>(tx, "SELECT * FROM evaluations WHERE id = ?", [evaluation.id]))!;
     return { evaluationId: saved.id, version: saved.version, savedAt: saved.updated_at };
@@ -161,8 +171,10 @@ export async function submitEvaluation(evaluatorId: string, input: EvaluationInp
     const settings = await readSettings(tx);
     if (settings.event_status !== "LIVE") throw new AppError("EVENT_NOT_LIVE");
     const remarks = normalizeRemarks(input.remarks);
+    const decision = normalizeDecision(input.decision);
     const criteria = await activeCriteria(tx);
     const scores = validateScores(criteria, input.scores, true);
+    if (!decision) throw new AppError("DECISION_REQUIRED");
     const domains = await validateDomains(tx, input.domainIds);
     const total = sum(scores.values());
     const maxTotal = sum(criteria.map((c) => c.max_marks));
@@ -176,7 +188,7 @@ export async function submitEvaluation(evaluatorId: string, input: EvaluationInp
       const sameScores = oldScores.length === scores.size && oldScores.every((s) => scores.get(s.criterion_id) === s.score);
       const sameDomains = oldDomains.length === domains.length && oldDomains.every((d) => domains.includes(d.domain_id));
       // Identical payload again (double click / retry after a timeout): succeed quietly.
-      if (sameScores && sameDomains && evaluation.remarks === remarks) {
+      if (sameScores && sameDomains && evaluation.remarks === remarks && evaluation.decision === decision) {
         return {
           evaluationId: evaluation.id,
           submittedAt: evaluation.submitted_at!,
@@ -193,9 +205,9 @@ export async function submitEvaluation(evaluatorId: string, input: EvaluationInp
     await run(
       tx,
       `UPDATE evaluations
-          SET remarks = ?, status = 'COMPLETED', total_score = ?, max_total = ?, submitted_at = NOW(3), version = version + 1
+          SET remarks = ?, decision = ?, status = 'COMPLETED', total_score = ?, max_total = ?, submitted_at = NOW(3), version = version + 1
         WHERE id = ?`,
-      [remarks, total, maxTotal, evaluation.id],
+      [remarks, decision, total, maxTotal, evaluation.id],
     );
     const saved = (await one<EvaluationRow>(tx, "SELECT * FROM evaluations WHERE id = ?", [evaluation.id]))!;
 
@@ -210,6 +222,7 @@ export async function submitEvaluation(evaluatorId: string, input: EvaluationInp
         scores: Object.fromEntries(scores),
         total,
         max_total: maxTotal,
+        decision,
         domains,
       },
     });
@@ -266,7 +279,7 @@ export async function adminReopenEvaluation(adminId: string, evaluationId: strin
       action: "EVALUATION_REOPENED",
       entityType: "evaluation",
       entityId: evaluationId,
-      metadata: { reason: why, previous_total: evaluation.total_score, evaluator_id: evaluation.evaluator_id },
+      metadata: { reason: why, previous_total: evaluation.total_score, previous_decision: evaluation.decision, evaluator_id: evaluation.evaluator_id },
     });
     await afterEvaluationChange(tx, evaluation);
   });
@@ -291,6 +304,7 @@ export async function adminReleaseEvaluation(adminId: string, evaluationId: stri
         student_id: evaluation.student_id,
         evaluator_id: evaluation.evaluator_id,
         status: evaluation.status,
+        decision: evaluation.decision,
         total: evaluation.total_score,
         remarks: evaluation.remarks,
         scores: Object.fromEntries(scores.map((s) => [s.criterion_id, s.score])),
@@ -369,6 +383,7 @@ export async function getStudentForEvaluation(evaluatorId: string, studentId: st
       id: evaluation.id,
       status: evaluation.status,
       remarks: evaluation.remarks,
+      decision: evaluation.decision,
       version: evaluation.version,
       updated_at: evaluation.updated_at,
       submitted_at: evaluation.submitted_at,
@@ -384,7 +399,7 @@ export async function getStudentForEvaluation(evaluatorId: string, studentId: st
 export const listMyEvaluations = (evaluatorId: string) =>
   rows<MyEvaluationRow>(
     pool(),
-    `SELECT ev.id AS evaluation_id, ev.status, ev.total_score, ev.max_total, ev.started_at, ev.submitted_at, ev.updated_at,
+    `SELECT ev.id AS evaluation_id, ev.status, ev.decision, ev.total_score, ev.max_total, ev.started_at, ev.submitted_at, ev.updated_at,
             s.id AS student_id, s.register_number, s.name AS student_name, s.department, s.section
        FROM evaluations ev JOIN students s ON s.id = ev.student_id
       WHERE ev.evaluator_id = ?
