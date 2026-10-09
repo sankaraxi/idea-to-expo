@@ -49,6 +49,9 @@ export function portalOwnedHeaders(criteria: readonly CriterionColumn[], setting
   ].filter((h) => h.trim() !== "");
 }
 
+/** Column K (0-based 10): first criterion score column when no header matches; total follows the last criterion. */
+export const SCORE_START_COL = 10;
+
 export interface ResponseLayout {
   registerCol: number | null;
   emailCol: number | null;
@@ -90,12 +93,15 @@ export function resolveLayout(
   let position = 0; // the k-th active criterion falls back to a header named "criteria k"
   for (const c of criteria) {
     if (c.is_active !== false) position++;
-    const col = find(criterionHeader(c)) ?? (c.is_active !== false ? find(`criteria ${position}`) : null);
+    // Last resort: active criteria fill the fixed score block starting at column K.
+    const col =
+      find(criterionHeader(c)) ??
+      (c.is_active !== false ? (find(`criteria ${position}`) ?? SCORE_START_COL + position - 1) : null);
     if (col === null) missing.push(`Criterion column “${criterionHeader(c)}”`);
     else criterionCols.set(c.id, col);
   }
   // Total: the configured header, else a column called "total score" / "total".
-  const totalCol = find(settings.totalHeader) ?? find("total score") ?? find("total");
+  const totalCol = find(settings.totalHeader) ?? find("total score") ?? find("total") ?? SCORE_START_COL + position;
   if (totalCol === null) missing.push(settings.totalHeader ? `Total column “${settings.totalHeader}”` : "Total column (not set)");
   const evaluatorCol = find(settings.evaluatorHeader);
   if (settings.evaluatorHeader && evaluatorCol === null) missing.push(`Evaluator column “${settings.evaluatorHeader}”`);
