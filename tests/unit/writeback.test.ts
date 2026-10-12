@@ -5,6 +5,7 @@ import {
   findResponseRow,
   portalOwnedHeaders,
   resolveLayout,
+  SCORE_START_COL,
   resolveWritebackSettings,
 } from "@/lib/sheets/writeback";
 
@@ -28,14 +29,13 @@ describe("response sheet write-back", () => {
     ]);
   });
 
-  it("reports missing columns for the admin", () => {
+  it("falls back to the fixed score block from column K when score headers are missing", () => {
     const layout = resolveLayout(headers.slice(0, 9), DEFAULT_FORM_FIELD_MAPPING, criteria, settings);
-    expect(layout.missing).toEqual([
-      "Criterion column “Innovation”",
-      "Criterion column “Feasibility (20)”",
-      "Total column “Total Score”",
-      "Evaluator column “Evaluator”",
-    ]);
+    const active = criteria.filter((c) => c.is_active !== false);
+    active.forEach((c, i) => expect(layout.criterionCols.get(c.id)).toBe(SCORE_START_COL + i));
+    expect(layout.totalCol).toBe(SCORE_START_COL + active.length);
+    // Optional columns with no fallback are still reported.
+    expect(layout.missing).toEqual(["Evaluator column “Evaluator”"]);
   });
 
   it("treats portal-owned headers as excluded from ingestion", () => {
