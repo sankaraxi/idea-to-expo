@@ -31,9 +31,8 @@ describe("response sheet write-back", () => {
 
   it("falls back to the fixed score block from column K when score headers are missing", () => {
     const layout = resolveLayout(headers.slice(0, 9), DEFAULT_FORM_FIELD_MAPPING, criteria, settings);
-    const active = criteria.filter((c) => c.is_active !== false);
-    active.forEach((c, i) => expect(layout.criterionCols.get(c.id)).toBe(SCORE_START_COL + i));
-    expect(layout.totalCol).toBe(SCORE_START_COL + active.length);
+    criteria.forEach((c, i) => expect(layout.criterionCols.get(c.id)).toBe(SCORE_START_COL + i));
+    expect(layout.totalCol).toBe(SCORE_START_COL + criteria.length);
     // Optional columns with no fallback are still reported.
     expect(layout.missing).toEqual(["Evaluator column “Evaluator”"]);
   });
