@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ExportButtons } from "@/components/admin/export-buttons";
 import { TieBreakInput } from "@/components/admin/tie-break-input";
 import { AutoRefresh } from "@/components/shared/auto-refresh";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -48,6 +49,7 @@ export default async function ResultsPage({ searchParams }: PageProps<"/admin/re
         <Button type="submit" variant="secondary">Apply</Button>
         <span className="text-sm text-muted-foreground">{rows.length} evaluated students</span>
       </form>
+      <ExportButtons department={department} />
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <Table>

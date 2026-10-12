@@ -4,6 +4,7 @@ import { DepartmentProgressChart, DomainChart, PercentageDistributionChart } fro
 import { EventControl } from "@/components/admin/event-control";
 import { EvaluatorProgressTable } from "@/components/admin/evaluator-progress-table";
 import { AutoRefresh } from "@/components/shared/auto-refresh";
+import { ExportButtons } from "@/components/admin/export-buttons";
 import { PageHeader, ProgressBar, StatCard } from "@/components/shared/ui-bits";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDashboardStats, getEvaluatorProgress } from "@/lib/data/admin";
@@ -49,6 +50,7 @@ export default async function AdminDashboard() {
           hint={stats.decision_counts.NOT_SET ? "evaluated without a status" : undefined}
         />
       </div>
+      <ExportButtons />
 
       <Card>
         <CardContent className="space-y-2">
